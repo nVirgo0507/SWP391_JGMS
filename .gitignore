@@ -1,0 +1,20 @@
+﻿# Visual Studio & .NET
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userprefs
+
+# JetBrains / Android Studio / Rider
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
