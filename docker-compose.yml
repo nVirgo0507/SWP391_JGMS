@@ -1,0 +1,13 @@
+﻿services:
+  db:
+    image: postgres:16
+    container_name: swp391_db_container
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: swp391_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: always

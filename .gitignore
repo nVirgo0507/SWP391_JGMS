@@ -18,3 +18,16 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Database Data (Do not commit actual database files)
+*.db
+*.sqlite
+*.mdf
+*.ldf
+postgres_data/
+pgdata/
+
+# Docker
+.env
+/REF/JGMS_ERD(1).sql
+/REF/JGMS_ERD(1).sql.bak
