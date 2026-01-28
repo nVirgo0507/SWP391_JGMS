@@ -31,3 +31,9 @@ pgdata/
 .env
 /REF/JGMS_ERD(1).sql
 /REF/JGMS_ERD(1).sql.bak
+/FIRST_TEST.md
+/docs/IMPLEMENTATION_SUMMARY.md
+/QUICKSTART.md
+/docs/SETUP_GUIDE.md
+/STARTUP_INSTRUCTIONS.md
+/docs/USER_API.md

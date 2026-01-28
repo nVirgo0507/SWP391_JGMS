@@ -1,5 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Npgsql.NameTranslation;
 using SWP391_JGMS.DAL;
+using SWP391_JGMS.DAL.Models;
+using SWP391_JGMS.DAL.Repositories;
+using SWP391_JGMS.BLL.Services;
 
 namespace SWP391_JGMS;
 
@@ -10,12 +15,30 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
+        builder.Services.AddControllers();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
-        // Register Database Context
+        // Configure Npgsql data source with enum mapping
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(
+            builder.Configuration.GetConnectionString("DefaultConnection") ?? 
+            "Host=localhost;Port=5433;Database=swp391_db;Username=admin;Password=123456");
+        
+        // Map enums with custom lowercase translator
+        dataSourceBuilder.MapEnum<UserRole>("user_role", new LowercaseNameTranslator());
+        dataSourceBuilder.MapEnum<UserStatus>("user_status", new LowercaseNameTranslator());
+        
+        var dataSource = dataSourceBuilder.Build();
+
+        // Register Database Context with configured data source
         builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(dataSource));
+
+        // Register Repositories
+        builder.Services.AddScoped<IUserRepository, UserRepository>();
+
+        // Register Services
+        builder.Services.AddScoped<IUserService, UserService>();
 
         var app = builder.Build();
 
@@ -27,32 +50,16 @@ public class Program
         }
 
         app.UseHttpsRedirection();
-
-        var summaries = new[]
-        {
-            "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-        };
-
-        app.MapGet("/weatherforecast", () =>
-            {
-                var forecast = Enumerable.Range(1, 5).Select(index =>
-                        new WeatherForecast
-                        (
-                            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                            Random.Shared.Next(-20, 55),
-                            summaries[Random.Shared.Next(summaries.Length)]
-                        ))
-                    .ToArray();
-                return forecast;
-            })
-            .WithName("GetWeatherForecast")
-            .WithOpenApi();
+        app.UseAuthorization();
+        app.MapControllers();
 
         app.Run();
     }
 }
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+// Custom name translator to convert C# enum names to lowercase for PostgreSQL
+public class LowercaseNameTranslator : INpgsqlNameTranslator
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    public string TranslateTypeName(string clrName) => clrName.ToLowerInvariant();
+    public string TranslateMemberName(string clrName) => clrName.ToLowerInvariant();
 }

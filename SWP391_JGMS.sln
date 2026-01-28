@@ -6,9 +6,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BLL", "backend\BLL\BLL.cspr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DAL", "backend\DAL\DAL.csproj", "{22222222-2222-2222-2222-222222222222}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "frontend", "frontend\frontend.csproj", "{F1A2B3C4-D5E6-7F8G-9H0I-J1K2L3M4N5O6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "frontend", "frontend\frontend.csproj", "{00000000-0000-0000-0000-000000000000}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D2E3F4G5-H6I7-J8K9-L0M1-N2O3P4Q5R6S7}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{00000000-0000-0000-0000-000000000000}"
 	ProjectSection(SolutionItems) = preProject
 		global.json = global.json
 		.gitignore = .gitignore
@@ -19,6 +19,9 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{A1B2C3D4-E5F6-7890-1234-567890ABCDEF}"
 	ProjectSection(SolutionItems) = preProject
 		docs\placeholder.txt = docs\placeholder.txt
+		docs\USER_API.md = docs\USER_API.md
+		docs\SETUP_GUIDE.md = docs\SETUP_GUIDE.md
+		docs\IMPLEMENTATION_SUMMARY.md = docs\IMPLEMENTATION_SUMMARY.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{FEDCBA09-8765-4321-0987-6543210FEDCB}"
