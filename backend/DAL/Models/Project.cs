@@ -4,25 +4,21 @@ using System.Collections.Generic;
 namespace DAL.Models;
 
 /// <summary>
-/// All users: Admin, Lecturer, Student
+/// One project per group
 /// </summary>
-public partial class User
+public partial class Project
 {
-    public int UserId { get; set; }
+    public int ProjectId { get; set; }
 
-    public string Email { get; set; } = null!;
+    public int GroupId { get; set; }
 
-    public string PasswordHash { get; set; } = null!;
+    public string ProjectName { get; set; } = null!;
 
-    public string FullName { get; set; } = null!;
+    public string? Description { get; set; }
 
-    public string? StudentCode { get; set; }
+    public DateOnly? StartDate { get; set; }
 
-    public string? GithubUsername { get; set; }
-
-    public string? JiraAccountId { get; set; }
-
-    public string? Phone { get; set; }
+    public DateOnly? EndDate { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 
@@ -32,7 +28,15 @@ public partial class User
 
     public virtual ICollection<Commit> Commits { get; set; } = new List<Commit>();
 
-    public virtual ICollection<GroupMember> GroupMembers { get; set; } = new List<GroupMember>();
+    public virtual ICollection<GithubCommit> GithubCommits { get; set; } = new List<GithubCommit>();
+
+    public virtual GithubIntegration? GithubIntegration { get; set; }
+
+    public virtual StudentGroup Group { get; set; } = null!;
+
+    public virtual JiraIntegration? JiraIntegration { get; set; }
+
+    public virtual ICollection<JiraIssue> JiraIssues { get; set; } = new List<JiraIssue>();
 
     public virtual ICollection<PersonalTaskStatistic> PersonalTaskStatistics { get; set; } = new List<PersonalTaskStatistic>();
 
@@ -42,9 +46,5 @@ public partial class User
 
     public virtual ICollection<SrsDocument> SrsDocuments { get; set; } = new List<SrsDocument>();
 
-    public virtual ICollection<StudentGroup> StudentGroupLeaders { get; set; } = new List<StudentGroup>();
-
-    public virtual ICollection<StudentGroup> StudentGroupLecturers { get; set; } = new List<StudentGroup>();
-
-    public virtual ICollection<Task> Tasks { get; set; } = new List<Task>();
+    public virtual ICollection<TeamCommitSummary> TeamCommitSummaries { get; set; } = new List<TeamCommitSummary>();
 }
