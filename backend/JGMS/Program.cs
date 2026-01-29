@@ -16,19 +16,6 @@ public class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
-        // Configure Npgsql data source with enum mapping
-        var dataSourceBuilder = new NpgsqlDataSourceBuilder(
-            builder.Configuration.GetConnectionString("DefaultConnection") ?? 
-            "Host=localhost;Port=5433;Database=swp391_db;Username=admin;Password=123456");
-        
-        // Map enums with custom lowercase translator
-
-        
-        var dataSource = dataSourceBuilder.Build();
-
-        // Register Database Context with configured data source
-        
-
         var app = builder.Build();
 
         // Configure the HTTP request pipeline.
