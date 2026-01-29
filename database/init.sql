@@ -516,7 +516,7 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO admin;
 INSERT INTO "USER" (email, password_hash, full_name, role, status) VALUES
 ('admin@swp391.edu.vn', '$2a$10$X3LcQ4K3N9k0K9J5G3K3N9k0K9J5G3K3N9k0K9J5G3K3N9k0K9J5G', 'System Administrator', 'admin', 'active');
 
-COMMENT ON DATABASE swp391_db IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
+COMMENT ON DATABASE JGMS IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
 
 -- ============================================================================
 -- END OF SCRIPT
