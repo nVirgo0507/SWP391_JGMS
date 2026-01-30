@@ -709,7 +709,9 @@ public partial class JgmsContext : DbContext
                 .HasColumnName("group_name");
             entity.Property(e => e.LeaderId).HasColumnName("leader_id");
             entity.Property(e => e.LecturerId).HasColumnName("lecturer_id");
-            entity.Property(e => e.Status).HasColumnName("status");
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasColumnType("user_status");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
