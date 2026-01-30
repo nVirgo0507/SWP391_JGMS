@@ -28,6 +28,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{FE
 	ProjectSection(SolutionItems) = preProject
 		database\init.sql = database\init.sql
 		database\placeholder.txt = database\placeholder.txt
+		database\DATABASE_SETUP.md = database\DATABASE_SETUP.md
+		database\setup.ps1 = database\setup.ps1
+		database\setup.bat = database\setup.bat
+		database\DOCKER_SETUP.md = database\DOCKER_SETUP.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{12345678-90AB-CDEF-1234-567890ABCDEF}"

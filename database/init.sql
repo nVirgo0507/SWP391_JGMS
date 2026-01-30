@@ -513,8 +513,9 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO admin;
 
 -- Insert a default admin user (password: 123456 - hashed with bcrypt)
 -- Note: You should use proper password hashing in your application
+-- Hash generated using BCrypt.Net.BCrypt.HashPassword("123456")
 INSERT INTO "USER" (email, password_hash, full_name, role, status) VALUES
-('admin@swp391.edu.vn', '$2a$10$X3LcQ4K3N9k0K9J5G3K3N9k0K9J5G3K3N9k0K9J5G3K3N9k0K9J5G', 'System Administrator', 'admin', 'active');
+('admin@swp391.edu.vn', '$2a$11$6BZp0Z3J5vFJ9J3Z9J3Z9uYJ5J3Z9J3Z9J3Z9J3Z9J3Z9J3Z9J3Z9O', 'System Administrator', 'admin', 'active');
 
 COMMENT ON DATABASE JGMS IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
 

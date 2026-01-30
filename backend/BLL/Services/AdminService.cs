@@ -190,18 +190,26 @@ namespace BLL.Services
 
             // Validate lecturer exists and has correct role
             var lecturer = await _userRepository.GetByIdAsync(dto.LecturerId);
-            if (lecturer == null || lecturer.Role != UserRole.lecturer)
+            if (lecturer == null)
             {
-                throw new Exception("Invalid lecturer ID or user is not a lecturer");
+                throw new Exception($"Lecturer with ID {dto.LecturerId} not found");
+            }
+            if (lecturer.Role != UserRole.lecturer)
+            {
+                throw new Exception($"User with ID {dto.LecturerId} is not a lecturer (current role: {lecturer.Role})");
             }
 
             // Validate leader if provided
             if (dto.LeaderId.HasValue)
             {
                 var leader = await _userRepository.GetByIdAsync(dto.LeaderId.Value);
-                if (leader == null || leader.Role != UserRole.student)
+                if (leader == null)
                 {
-                    throw new Exception("Invalid leader ID or user is not a student");
+                    throw new Exception($"Leader with ID {dto.LeaderId.Value} not found");
+                }
+                if (leader.Role != UserRole.student)
+                {
+                    throw new Exception($"User with ID {dto.LeaderId.Value} is not a student (current role: {leader.Role})");
                 }
             }
 

@@ -48,8 +48,6 @@ namespace DAL.Repositories
 
         public async System.Threading.Tasks.Task AddAsync(StudentGroup group)
         {
-            group.CreatedAt = DateTime.UtcNow;
-            group.UpdatedAt = DateTime.UtcNow;
             _context.StudentGroups.Add(group);
             await _context.SaveChangesAsync();
         }

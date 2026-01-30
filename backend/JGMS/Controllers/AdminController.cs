@@ -38,7 +38,12 @@ namespace SWP391_JGMS.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                var errorMessage = ex.Message;
+                if (ex.InnerException != null)
+                {
+                    errorMessage += " | Inner: " + ex.InnerException.Message;
+                }
+                return BadRequest(new { message = errorMessage, stackTrace = ex.StackTrace });
             }
         }
 
@@ -338,7 +343,12 @@ namespace SWP391_JGMS.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                var errorMessage = ex.Message;
+                if (ex.InnerException != null)
+                {
+                    errorMessage += " | Inner: " + ex.InnerException.Message;
+                }
+                return BadRequest(new { message = errorMessage });
             }
         }
 
