@@ -1,4 +1,4 @@
-﻿# Visual Studio & .NET
+﻿﻿# Visual Studio & .NET
 .vs/
 [Bb]in/
 [Oo]bj/
@@ -29,6 +29,8 @@ pgdata/
 
 # Docker
 .env
+/backend/PasswordHashGenerator/
+/backend/GeneratePasswordHash.cs
 /REF/JGMS_ERD(1).sql
 /REF/JGMS_ERD(1).sql.bak
 /FIRST_TEST.md
@@ -55,3 +57,12 @@ pgdata/
 /STATUS_COLUMN_FIX.md
 /TESTING_ADMIN_APIS.md
 /TROUBLESHOOT_GROUP_CREATION.md
+/ADDITIONAL_BACKEND_FIXES.md
+/ADDITIONAL_FIXES_QUICK_REF.md
+/BACKEND_FIXES_MASTER_INDEX.md
+/BACKEND_REVIEW_FIXES_SUMMARY.md
+/COMMIT_MESSAGE.md
+/COMPLETE_COMMIT_MESSAGE.md
+/HOW_TO_UPDATE_DATABASE.md
+/QUICK_REFERENCE.md
+/SECURITY_IMPROVEMENTS.md

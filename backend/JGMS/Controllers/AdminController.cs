@@ -1,9 +1,17 @@
-﻿using BLL.DTOs.Admin;
+﻿﻿using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Mvc;
 
 namespace SWP391_JGMS.Controllers
 {
+    /// <summary>
+    /// SECURITY WARNING: This controller currently has NO authentication or authorization.
+    /// Any user can access these endpoints. Before deploying to production:
+    /// 1. Implement JWT authentication in Program.cs
+    /// 2. Add [Authorize(Roles = "admin")] attribute to this controller or individual endpoints
+    /// 3. Configure authentication middleware
+    /// See: https://learn.microsoft.com/en-us/aspnet/core/security/authentication/
+    /// </summary>
     [ApiController]
     [Route("api/admin")]
     public class AdminController : ControllerBase
@@ -148,11 +156,11 @@ namespace SWP391_JGMS.Controllers
         /// BR-007: Inactive Users Cannot Login
         /// </summary>
         [HttpPatch("users/{userId}/status")]
-        public async Task<IActionResult> SetUserStatus(int userId, [FromBody] string status)
+        public async Task<IActionResult> SetUserStatus(int userId, [FromBody] SetUserStatusDTO dto)
         {
             try
             {
-                await _adminService.SetUserStatusAsync(userId, status);
+                await _adminService.SetUserStatusAsync(userId, dto.Status);
                 return Ok(new { message = "User status updated successfully" });
             }
             catch (Exception ex)

@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Admin;
+﻿﻿using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -149,6 +149,13 @@ namespace BLL.Services
 
         public async System.Threading.Tasks.Task DeleteUserAsync(int userId)
         {
+            // Verify user exists
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
             // BR-059: Cascade Delete Prevention
             if (!await _userRepository.CanDeleteUserAsync(userId))
             {
@@ -302,6 +309,12 @@ namespace BLL.Services
             if (group == null)
             {
                 throw new Exception("Student group not found");
+            }
+
+            // Check if group can be deleted (no associated project)
+            if (!await _groupRepository.CanDeleteGroupAsync(groupId))
+            {
+                throw new Exception("Cannot delete group: group has an associated project. Please delete or reassign the project first.");
             }
 
             // Use soft delete
