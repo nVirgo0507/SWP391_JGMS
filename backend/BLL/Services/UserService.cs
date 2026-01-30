@@ -61,6 +61,8 @@ namespace BLL.Services
 				Email = dto.Email,
 				FullName = dto.FullName,
 				StudentCode = dto.StudentCode,
+				Role = UserRole.student,
+				Status = UserStatus.active,
 				CreatedAt = DateTime.Now,
 				UpdatedAt = DateTime.Now
 			};

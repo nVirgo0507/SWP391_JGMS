@@ -22,7 +22,14 @@ public class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
-        builder.Services.AddDbContext<JgmsContext>();
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
+
+		builder.Services.AddDbContext<JgmsContext>(options =>
+	        options.UseNpgsql(
+		    builder.Configuration.GetConnectionString("DefaultConnection")
+	    ));
+
 
 		builder.Services.AddScoped<IUserRepository, UserRepository>();
 		builder.Services.AddScoped<IUserService, UserService>();

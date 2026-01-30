@@ -24,7 +24,11 @@ public partial class User
 
     public string? Phone { get; set; }
 
-    public DateTime? CreatedAt { get; set; }
+	public UserRole Role { get; set; }
+
+	public UserStatus? Status { get; set; } = UserStatus.active;
+
+	public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
 
