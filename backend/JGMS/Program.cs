@@ -30,9 +30,14 @@ public class Program
 		    builder.Configuration.GetConnectionString("DefaultConnection")
 	    ));
 
-
+		// Register repositories
 		builder.Services.AddScoped<IUserRepository, UserRepository>();
+		builder.Services.AddScoped<IStudentGroupRepository, StudentGroupRepository>();
+		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
+
+		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
+		builder.Services.AddScoped<IAdminService, AdminService>();
 
         var app = builder.Build();
 
