@@ -1,6 +1,12 @@
+using BLL.Services;
+using BLL.Services.Interface;
+using DAL.Repositories;
+using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Npgsql.NameTranslation;
+using DAL.Models;
+using Microsoft.EntityFrameworkCore;
 
 
 namespace SWP391_JGMS;
@@ -16,10 +22,15 @@ public class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
+        builder.Services.AddDbContext<JgmsContext>();
+
+		builder.Services.AddScoped<IUserRepository, UserRepository>();
+		builder.Services.AddScoped<IUserService, UserService>();
+
         var app = builder.Build();
 
-        // Configure the HTTP request pipeline.
-        if (app.Environment.IsDevelopment())
+		// Configure the HTTP request pipeline.
+		if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
             app.UseSwaggerUI();
