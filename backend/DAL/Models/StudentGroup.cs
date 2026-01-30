@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -17,6 +17,8 @@ public partial class StudentGroup
     public int LecturerId { get; set; }
 
     public int? LeaderId { get; set; }
+
+    public UserStatus? Status { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 

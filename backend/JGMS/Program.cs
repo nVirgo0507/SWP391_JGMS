@@ -18,21 +18,33 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
-        builder.Services.AddControllers();
+        builder.Services.AddControllers()
+            .AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+            });
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
 
+		// Configure Npgsql to handle DateTime correctly
+		AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 		builder.Services.AddDbContext<JgmsContext>(options =>
 	        options.UseNpgsql(
 		    builder.Configuration.GetConnectionString("DefaultConnection")
 	    ));
 
-
+		// Register repositories
 		builder.Services.AddScoped<IUserRepository, UserRepository>();
+		builder.Services.AddScoped<IStudentGroupRepository, StudentGroupRepository>();
+		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
+
+		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
+		builder.Services.AddScoped<IAdminService, AdminService>();
 
         var app = builder.Build();
 
