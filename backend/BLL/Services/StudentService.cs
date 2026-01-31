@@ -39,17 +39,18 @@ namespace BLL.Services
             return tasks.Select(t => MapToTaskResponse(t)).ToList();
         }
 
-        public async Task<TaskResponseDTO?> GetTaskByIdAsync(int taskId, int userId)
+        public async System.Threading.Tasks.Task<TaskResponseDTO?> GetTaskByIdAsync(int taskId, int userId)
         {
             var task = await _taskRepository.GetByIdAsync(taskId);
-            
+
             if (task == null)
             {
                 return null;
             }
 
-            // Ensure the task belongs to the requesting user
-            if (task.AssignedTo != userId)
+            // Ensure the task is assigned and belongs to the requesting user
+            // Explicitly reject access to unassigned tasks (AssignedTo is null)
+            if (!task.AssignedTo.HasValue || task.AssignedTo.Value != userId)
             {
                 throw new UnauthorizedAccessException("You do not have permission to view this task");
             }
@@ -70,18 +71,35 @@ namespace BLL.Services
                 throw new Exception("Task not found");
             }
 
-            // Ensure the task belongs to the requesting user
-            if (task.AssignedTo != userId)
+            // Ensure the task is assigned and belongs to the requesting user
+            // Explicitly reject access to unassigned tasks (AssignedTo is null)
+            if (!task.AssignedTo.HasValue || task.AssignedTo.Value != userId)
             {
                 throw new UnauthorizedAccessException("You do not have permission to update this task");
             }
 
             // Parse and update task status
-            var statusString = dto.Status.Replace(" ", "_").ToLower();
+            // Normalize input: trim first, then lowercase, replace separators, map synonyms
+            // Accepts: "todo", "To Do", "to_do", "in progress", "in-progress", "done", "Done", etc.
+            var normalized = dto.Status
+                .Trim()                   // Trim whitespace first
+                .ToLower()                // Convert to lowercase
+                .Replace(" ", "_")        // "to do" → "to_do"
+                .Replace("-", "_");       // "in-progress" → "in_progress"
+
+            // Map common variants to actual enum values
+            // "to_do" → "todo", "completed" → "done"
+            var statusString = normalized switch
+            {
+                "to_do" => "todo",
+                "completed" => "done",
+                _ => normalized
+            };
+
             if (Enum.TryParse<DAL.Models.TaskStatus>(statusString, true, out var taskStatus))
             {
                 task.Status = taskStatus;
-                
+
                 // Set completion timestamp when status is done
                 if (taskStatus == DAL.Models.TaskStatus.done)
                 {
@@ -95,11 +113,14 @@ namespace BLL.Services
             }
             else
             {
-                throw new Exception($"Invalid status: {dto.Status}. Valid values: todo, in_progress, done");
+                throw new Exception($"Invalid status: '{dto.Status}'. Valid values: 'todo'/'to do', 'in_progress'/'in progress', 'done'/'completed' (case-insensitive)");
             }
 
-            // Note: In a real implementation, you would also update the Jira issue status
-            // via API call here if JiraIssueId is present
+            // TODO: Integrate with Jira API when implemented
+            // - Update Jira issue status via API if task.JiraIssueId is present
+            // - Post dto.Comment as Jira comment if provided
+            // - Log dto.WorkHours in Jira if provided
+            // Example: await _jiraService.UpdateIssueAsync(task.JiraIssueId, dto.Status, dto.Comment, dto.WorkHours);
 
             await _taskRepository.UpdateAsync(task);
         }
@@ -134,11 +155,11 @@ namespace BLL.Services
                 statisticsDto.CompletedTasks = allStats.Sum(s => s.CompletedTasks ?? 0);
                 statisticsDto.InProgressTasks = allStats.Sum(s => s.InProgressTasks ?? 0);
                 statisticsDto.OverdueTasks = allStats.Sum(s => s.OverdueTasks ?? 0);
-                statisticsDto.CompletionRate = statisticsDto.TotalTasks > 0 
-                    ? (decimal)statisticsDto.CompletedTasks / statisticsDto.TotalTasks * 100 
+                statisticsDto.CompletionRate = statisticsDto.TotalTasks > 0
+                    ? (decimal)statisticsDto.CompletedTasks / statisticsDto.TotalTasks * 100
                     : 0;
-                statisticsDto.LastCalculated = allStats.Any() 
-                    ? allStats.Max(s => s.LastCalculated) 
+                statisticsDto.LastCalculated = allStats.Any()
+                    ? allStats.Max(s => s.LastCalculated)
                     : null;
             }
 
@@ -182,7 +203,7 @@ namespace BLL.Services
         public async Task<UserResponseDTO> GetMyProfileAsync(int userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
-            
+
             if (user == null)
             {
                 throw new Exception("User not found");
@@ -194,7 +215,7 @@ namespace BLL.Services
         public async Task<UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
         {
             var user = await _userRepository.GetByIdAsync(userId);
-            
+
             if (user == null)
             {
                 throw new Exception("User not found");
@@ -216,7 +237,7 @@ namespace BLL.Services
                 user.JiraAccountId = dto.JiraAccountId;
             }
 
-            user.UpdatedAt = DateTime.UtcNow;
+            // UpdatedAt is set by repository layer (UserRepository.UpdateAsync)
             await _userRepository.UpdateAsync(user);
 
             return MapToUserResponse(user);
@@ -244,7 +265,7 @@ namespace BLL.Services
         public async System.Threading.Tasks.Task<SrsDocumentDTO?> GetSrsDocumentByIdAsync(int documentId, int userId)
         {
             var document = await _srsRepository.GetByIdAsync(documentId);
-            
+
             if (document == null)
             {
                 return null;

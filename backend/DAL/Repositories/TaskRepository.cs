@@ -52,32 +52,40 @@ namespace DAL.Repositories
         {
             var today = DateOnly.FromDateTime(DateTime.Today);
             return await _context.Tasks
-                .Where(t => t.AssignedTo == userId 
-                    && t.DueDate.HasValue 
-                    && t.DueDate < today 
+                .Where(t => t.AssignedTo == userId
+                    && t.DueDate.HasValue
+                    && t.DueDate < today
                     && !t.CompletedAt.HasValue)
                 .ToListAsync();
         }
 
         public async System.Threading.Tasks.Task<int> CountTasksByStatusAsync(int userId, string status)
         {
-            // This is a simple implementation
-            // In a real scenario, you'd need to check the JiraIssue status
-            if (status == "completed")
+            // Normalize status string using same logic as UpdateTaskStatusAsync
+            // Handles variants: "to do", "to_do", "in-progress", "in progress", "completed", etc.
+            var normalized = status
+                .Trim()                   // Trim whitespace first
+                .ToLower()                // Convert to lowercase
+                .Replace(" ", "_")        // "to do" → "to_do"
+                .Replace("-", "_");       // "in-progress" → "in_progress"
+
+            // Map common variants to actual enum values
+            var statusString = normalized switch
+            {
+                "to_do" => "todo",
+                "completed" => "done",
+                _ => normalized
+            };
+
+            // Try to parse to enum
+            if (Enum.TryParse<DAL.Models.TaskStatus>(statusString, true, out var taskStatus))
             {
                 return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId && t.CompletedAt.HasValue)
+                    .Where(t => t.AssignedTo == userId && t.Status == taskStatus)
                     .CountAsync();
             }
-            else if (status == "in_progress")
-            {
-                return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId 
-                        && !t.CompletedAt.HasValue 
-                        && t.CreatedAt.HasValue)
-                    .CountAsync();
-            }
-            
+
+            // If parsing fails, count all tasks for user (fallback)
             return await _context.Tasks
                 .Where(t => t.AssignedTo == userId)
                 .CountAsync();
