@@ -313,10 +313,13 @@ namespace SWP391_JGMS.Controllers
                 // Get the configured base directory for SRS documents from configuration
                 // For now, using a safe default - should be moved to appsettings.json
                 var baseDirectory = Path.Combine(Directory.GetCurrentDirectory(), "SrsDocuments");
-                var fullPath = Path.GetFullPath(Path.Combine(baseDirectory, Path.GetFileName(document.FilePath)));
+
+                // Combine the base directory with the stored file path and normalize
+                var fullPath = Path.GetFullPath(Path.Combine(baseDirectory, document.FilePath));
 
                 // Ensure the resolved path is within the allowed base directory
-                if (!fullPath.StartsWith(Path.GetFullPath(baseDirectory), StringComparison.OrdinalIgnoreCase))
+                var normalizedBaseDirectory = Path.GetFullPath(baseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (!fullPath.StartsWith(normalizedBaseDirectory, StringComparison.OrdinalIgnoreCase))
                 {
                     return BadRequest(new { message = "Invalid file path" });
                 }
