@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +18,15 @@ namespace DAL.Repositories
             return await _context.GroupMembers
                 .Include(gm => gm.User)
                 .Where(gm => gm.GroupId == groupId)
+                .ToListAsync();
+        }
+
+        public async Task<List<GroupMember>> GetGroupsByStudentIdAsync(int userId)
+        {
+            return await _context.GroupMembers
+                .Include(gm => gm.Group)
+                    .ThenInclude(g => g.Project)
+                .Where(gm => gm.UserId == userId)
                 .ToListAsync();
         }
 

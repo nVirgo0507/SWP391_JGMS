@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Npgsql.NameTranslation;
 using DAL.Models;
-using Microsoft.EntityFrameworkCore;
 
 
 namespace SWP391_JGMS;
@@ -28,6 +27,14 @@ public class Program
 
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<DAL.Models.TaskStatus>("task_status");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<PriorityLevel>("priority_level");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<RequirementType>("requirement_type");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<JiraPriority>("jira_priority");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<DocumentStatus>("document_status");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<ProjectStatus>("project_status");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<SyncStatus>("sync_status");
+		NpgsqlConnection.GlobalTypeMapper.MapEnum<ReportType>("report_type");
 
 		// Configure Npgsql to handle DateTime correctly
 		AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
@@ -41,10 +48,15 @@ public class Program
 		builder.Services.AddScoped<IUserRepository, UserRepository>();
 		builder.Services.AddScoped<IStudentGroupRepository, StudentGroupRepository>();
 		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
+		builder.Services.AddScoped<ITaskRepository, TaskRepository>();
+		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
+		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
+		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
 
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
 		builder.Services.AddScoped<IAdminService, AdminService>();
+		builder.Services.AddScoped<IStudentService, StudentService>();
 
         var app = builder.Build();
 
