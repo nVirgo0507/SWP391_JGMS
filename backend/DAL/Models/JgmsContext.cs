@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System;
 using System.Collections.Generic;
@@ -56,6 +56,14 @@ public partial class JgmsContext : DbContext
         {
 			NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
 			NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<TaskStatus>("task_status");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<PriorityLevel>("priority_level");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<RequirementType>("requirement_type");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<JiraPriority>("jira_priority");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<DocumentStatus>("document_status");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<ProjectStatus>("project_status");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<SyncStatus>("sync_status");
+			NpgsqlConnection.GlobalTypeMapper.MapEnum<ReportType>("report_type");
 
 			optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=JGMS;Username=admin;Password=123456");
 		}
@@ -751,7 +759,13 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.DueDate).HasColumnName("due_date");
             entity.Property(e => e.JiraIssueId).HasColumnName("jira_issue_id");
+            entity.Property(e => e.Priority)
+                .HasColumnName("priority")
+                .HasColumnType("priority_level");
             entity.Property(e => e.RequirementId).HasColumnName("requirement_id");
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasColumnType("task_status");
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
                 .HasColumnName("title");

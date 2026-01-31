@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -19,6 +19,10 @@ public partial class Task
     public string Title { get; set; } = null!;
 
     public string? Description { get; set; }
+
+    public TaskStatus Status { get; set; } = TaskStatus.todo;
+
+    public PriorityLevel Priority { get; set; } = PriorityLevel.medium;
 
     public DateOnly? DueDate { get; set; }
 
