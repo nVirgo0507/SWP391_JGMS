@@ -11,7 +11,7 @@ namespace SWP391_JGMS.Controllers
     /// - View personal statistics
     /// - Update profile information
     /// - Access SRS documents
-    /// 
+    ///
     /// SECURITY NOTE: This controller currently has NO authentication.
     /// The userId is passed as a parameter, which should be replaced with
     /// authentication once JWT is implemented. Use [Authorize] attribute.
@@ -58,17 +58,17 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var task = await _studentService.GetTaskByIdAsync(taskId, userId);
-                
+
                 if (task == null)
                 {
                     return NotFound(new { message = "Task not found" });
                 }
-                
+
                 return Ok(task);
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Forbid(ex.Message);
+                return StatusCode(403, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -81,16 +81,26 @@ namespace SWP391_JGMS.Controllers
         #region Update Task Status
 
         /// <summary>
-        /// Update the status of a task assigned to the student
+        /// Update the status of a task assigned to the student.
         /// Team members can change status (To Do → In Progress → Done)
-        /// and add comments or log work hours
+        /// and add comments or log work hours.
+        ///
+        /// Accepted status values (case-insensitive, flexible formatting):
+        /// - "todo", "To Do", "to do", "to_do"
+        /// - "in_progress", "In Progress", "in progress", "in-progress"
+        /// - "done", "Done"
+        ///
+        /// Spaces and hyphens are automatically normalized to underscores.
         /// </summary>
         /// <param name="taskId">Task ID</param>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
-        /// <param name="dto">Update task status DTO</param>
+        /// <param name="dto">Update task status DTO with status, optional comment, and work hours</param>
+        /// <response code="200">Status updated successfully</response>
+        /// <response code="400">Invalid status value or task not found</response>
+        /// <response code="403">User does not have permission to update this task</response>
         [HttpPut("tasks/{taskId}/status")]
         public async Task<IActionResult> UpdateTaskStatus(
-            int taskId, 
+            int taskId,
             [FromQuery] int userId,
             [FromBody] UpdateTaskStatusDTO dto)
         {
@@ -233,7 +243,7 @@ namespace SWP391_JGMS.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Forbid(ex.Message);
+                return StatusCode(403, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -255,17 +265,17 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var document = await _studentService.GetSrsDocumentByIdAsync(documentId, userId);
-                
+
                 if (document == null)
                 {
                     return NotFound(new { message = "SRS document not found" });
                 }
-                
+
                 return Ok(document);
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Forbid(ex.Message);
+                return StatusCode(403, new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -276,6 +286,7 @@ namespace SWP391_JGMS.Controllers
         /// <summary>
         /// Download SRS document file
         /// Returns the actual file if FilePath exists
+        /// Security: Validates file path to prevent directory traversal attacks
         /// </summary>
         /// <param name="documentId">Document ID</param>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
@@ -287,25 +298,42 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var document = await _studentService.GetSrsDocumentByIdAsync(documentId, userId);
-                
+
                 if (document == null)
                 {
                     return NotFound(new { message = "SRS document not found" });
                 }
 
-                if (string.IsNullOrEmpty(document.FilePath) || !System.IO.File.Exists(document.FilePath))
+                if (string.IsNullOrEmpty(document.FilePath))
+                {
+                    return NotFound(new { message = "Document file path not configured" });
+                }
+
+                // Security: Validate file path to prevent directory traversal
+                // Get the configured base directory for SRS documents from configuration
+                // For now, using a safe default - should be moved to appsettings.json
+                var baseDirectory = Path.Combine(Directory.GetCurrentDirectory(), "SrsDocuments");
+                var fullPath = Path.GetFullPath(Path.Combine(baseDirectory, Path.GetFileName(document.FilePath)));
+
+                // Ensure the resolved path is within the allowed base directory
+                if (!fullPath.StartsWith(Path.GetFullPath(baseDirectory), StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = "Invalid file path" });
+                }
+
+                if (!System.IO.File.Exists(fullPath))
                 {
                     return NotFound(new { message = "Document file not found on server" });
                 }
 
-                var fileBytes = await System.IO.File.ReadAllBytesAsync(document.FilePath);
+                var fileBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
                 var fileName = $"{document.DocumentTitle}_v{document.Version}.pdf";
-                
+
                 return File(fileBytes, "application/pdf", fileName);
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Forbid(ex.Message);
+                return StatusCode(403, new { message = ex.Message });
             }
             catch (Exception ex)
             {

@@ -52,32 +52,38 @@ namespace DAL.Repositories
         {
             var today = DateOnly.FromDateTime(DateTime.Today);
             return await _context.Tasks
-                .Where(t => t.AssignedTo == userId 
-                    && t.DueDate.HasValue 
-                    && t.DueDate < today 
+                .Where(t => t.AssignedTo == userId
+                    && t.DueDate.HasValue
+                    && t.DueDate < today
                     && !t.CompletedAt.HasValue)
                 .ToListAsync();
         }
 
         public async System.Threading.Tasks.Task<int> CountTasksByStatusAsync(int userId, string status)
         {
-            // This is a simple implementation
-            // In a real scenario, you'd need to check the JiraIssue status
-            if (status == "completed")
+            // Parse status string to enum and count tasks by actual Status field
+            var statusLower = status.ToLower();
+
+            if (statusLower == "completed" || statusLower == "done")
             {
                 return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId && t.CompletedAt.HasValue)
+                    .Where(t => t.AssignedTo == userId && t.Status == DAL.Models.TaskStatus.done)
                     .CountAsync();
             }
-            else if (status == "in_progress")
+            else if (statusLower == "in_progress" || statusLower == "in progress")
             {
                 return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId 
-                        && !t.CompletedAt.HasValue 
-                        && t.CreatedAt.HasValue)
+                    .Where(t => t.AssignedTo == userId && t.Status == DAL.Models.TaskStatus.in_progress)
                     .CountAsync();
             }
-            
+            else if (statusLower == "todo" || statusLower == "to do")
+            {
+                return await _context.Tasks
+                    .Where(t => t.AssignedTo == userId && t.Status == DAL.Models.TaskStatus.todo)
+                    .CountAsync();
+            }
+
+            // Default: count all tasks for user
             return await _context.Tasks
                 .Where(t => t.AssignedTo == userId)
                 .CountAsync();
