@@ -61,29 +61,31 @@ namespace DAL.Repositories
 
         public async System.Threading.Tasks.Task<int> CountTasksByStatusAsync(int userId, string status)
         {
-            // Parse status string to enum and count tasks by actual Status field
-            var statusLower = status.ToLower();
+            // Normalize status string using same logic as UpdateTaskStatusAsync
+            // Handles variants: "to do", "to_do", "in-progress", "in progress", "completed", etc.
+            var normalized = status
+                .Trim()                   // Trim whitespace first
+                .ToLower()                // Convert to lowercase
+                .Replace(" ", "_")        // "to do" → "to_do"
+                .Replace("-", "_");       // "in-progress" → "in_progress"
 
-            if (statusLower == "completed" || statusLower == "done")
+            // Map common variants to actual enum values
+            var statusString = normalized switch
+            {
+                "to_do" => "todo",
+                "completed" => "done",
+                _ => normalized
+            };
+
+            // Try to parse to enum
+            if (Enum.TryParse<DAL.Models.TaskStatus>(statusString, true, out var taskStatus))
             {
                 return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId && t.Status == DAL.Models.TaskStatus.done)
-                    .CountAsync();
-            }
-            else if (statusLower == "in_progress" || statusLower == "in progress")
-            {
-                return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId && t.Status == DAL.Models.TaskStatus.in_progress)
-                    .CountAsync();
-            }
-            else if (statusLower == "todo" || statusLower == "to do")
-            {
-                return await _context.Tasks
-                    .Where(t => t.AssignedTo == userId && t.Status == DAL.Models.TaskStatus.todo)
+                    .Where(t => t.AssignedTo == userId && t.Status == taskStatus)
                     .CountAsync();
             }
 
-            // Default: count all tasks for user
+            // If parsing fails, count all tasks for user (fallback)
             return await _context.Tasks
                 .Where(t => t.AssignedTo == userId)
                 .CountAsync();

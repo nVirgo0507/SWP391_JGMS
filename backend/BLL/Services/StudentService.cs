@@ -79,12 +79,22 @@ namespace BLL.Services
             }
 
             // Parse and update task status
-            // Accepts formats: "todo", "To Do", "to_do", "in progress", "in_progress", "done", "Done"
-            var statusString = dto.Status
+            // Normalize input: trim first, then lowercase, replace separators, map synonyms
+            // Accepts: "todo", "To Do", "to_do", "in progress", "in-progress", "done", "Done", etc.
+            var normalized = dto.Status
+                .Trim()                   // Trim whitespace first
+                .ToLower()                // Convert to lowercase
                 .Replace(" ", "_")        // "to do" → "to_do"
-                .Replace("-", "_")        // "in-progress" → "in_progress"
-                .ToLower()
-                .Trim();
+                .Replace("-", "_");       // "in-progress" → "in_progress"
+
+            // Map common variants to actual enum values
+            // "to_do" → "todo", "completed" → "done"
+            var statusString = normalized switch
+            {
+                "to_do" => "todo",
+                "completed" => "done",
+                _ => normalized
+            };
 
             if (Enum.TryParse<DAL.Models.TaskStatus>(statusString, true, out var taskStatus))
             {
@@ -103,7 +113,7 @@ namespace BLL.Services
             }
             else
             {
-                throw new Exception($"Invalid status: '{dto.Status}'. Valid values: 'todo', 'in_progress', 'done' (case-insensitive, spaces/hyphens allowed)");
+                throw new Exception($"Invalid status: '{dto.Status}'. Valid values: 'todo'/'to do', 'in_progress'/'in progress', 'done'/'completed' (case-insensitive)");
             }
 
             // TODO: Integrate with Jira API when implemented
