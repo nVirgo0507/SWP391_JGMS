@@ -1,10 +1,32 @@
 .admin-layout {
   display: flex;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.admin-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - 240px);
 }
 
 .admin-content {
   flex: 1;
-  padding: 24px;
-  background: #f9fafb;
-  min-height: 100vh;
+  padding: 32px;
+  background: #f6faf7;
+}
+
+@media (max-width: 768px) {
+  .admin-layout {
+    flex-direction: column;
+  }
+
+  .admin-main {
+    width: 100%;
+  }
+
+  .admin-content {
+    padding: 16px;
+  }
 }
