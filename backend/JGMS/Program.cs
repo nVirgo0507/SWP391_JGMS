@@ -45,6 +45,14 @@ public class Program
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
 		builder.Services.AddScoped<IAdminService, AdminService>();
+		// BR-054: Lecturer Group-Scoped Access service
+		builder.Services.AddScoped<ILecturerService, LecturerService>();
+		// BR-055: Team Leader Group-Scoped Access service
+		builder.Services.AddScoped<ITeamLeaderService, TeamLeaderService>();
+		// BR-056: Team Member Self-Scoped Access service
+		builder.Services.AddScoped<ITeamMemberService, TeamMemberService>();
+		// BR-058: Admin Integration Configuration service
+		builder.Services.AddScoped<IIntegrationService, IntegrationService>();
 
         var app = builder.Build();
 
