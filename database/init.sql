@@ -511,12 +511,13 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO admin;
 -- Sample Data (Optional - for testing)
 -- ============================================================================
 
--- Insert a default admin user (password: 123456 - hashed with bcrypt)
--- Note: You should use proper password hashing in your application
+-- Insert a default admin user (password: Password_1 - hashed with Microsoft.AspNetCore.Identity.PasswordHasher)
+-- Note: You should change this password in production
+-- Hash generated using Microsoft.AspNetCore.Identity.PasswordHasher<User>
 INSERT INTO "USER" (email, password_hash, full_name, role, status) VALUES
-('admin@swp391.edu.vn', '$2a$10$X3LcQ4K3N9k0K9J5G3K3N9k0K9J5G3K3N9k0K9J5G3K3N9k0K9J5G', 'System Administrator', 'admin', 'active');
+('admin@swp391.edu.vn', 'AQAAAAIAAYagAAAAEABr5SSWk+HY71406Q2uF2fMXiKCWcboNEnUw+3V8FLINDCIbxDe9NQvSuFHkcyrrQ==', 'System Administrator', 'admin', 'active');
 
-COMMENT ON DATABASE swp391_db IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
+COMMENT ON DATABASE JGMS IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
 
 -- ============================================================================
 -- END OF SCRIPT
