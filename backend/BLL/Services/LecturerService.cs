@@ -5,10 +5,6 @@ using DAL.Repositories.Interface;
 
 namespace BLL.Services
 {
-    /// <summary>
-    /// Service for lecturer-scoped operations with group access control
-    /// BR-054: Lecturer Group-Scoped Access - Lecturers can only access groups assigned to them
-    /// </summary>
     public class LecturerService : ILecturerService
     {
         private readonly IStudentGroupRepository _groupRepository;
@@ -25,10 +21,6 @@ namespace BLL.Services
             _memberRepository = memberRepository;
         }
 
-        /// <summary>
-        /// BR-054: Get group details - Only accessible by assigned lecturer
-        /// Validates that the lecturer is assigned to the group before returning details
-        /// </summary>
         public async Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
@@ -37,7 +29,6 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // BR-054: Lecturer Group-Scoped Access - Check lecturer_id matches
             if (group.LecturerId != lecturerId)
             {
                 throw new Exception("Access denied. You are not assigned to this group.");
@@ -47,28 +38,18 @@ namespace BLL.Services
             return groupDetails != null ? MapToGroupResponse(groupDetails) : null;
         }
 
-        /// <summary>
-        /// BR-054: Get all groups assigned to the lecturer
-        /// Only returns groups where lecturer_id matches the current user
-        /// </summary>
         public async Task<List<StudentGroupResponseDTO>> GetMyGroupsAsync(int lecturerId)
         {
-            // Verify lecturer exists
             var lecturer = await _userRepository.GetByIdAsync(lecturerId);
             if (lecturer == null || lecturer.Role != UserRole.lecturer)
             {
                 throw new Exception("Lecturer not found or invalid user role");
             }
 
-            // BR-054: Get only groups assigned to this lecturer
             var groups = await _groupRepository.GetGroupsByLecturerAsync(lecturerId);
             return groups.Select(MapToGroupResponse).ToList();
         }
 
-        /// <summary>
-        /// BR-054: Get all members in a group assigned to the lecturer
-        /// Validates lecturer access before retrieving members
-        /// </summary>
         public async Task<List<GroupMemberResponseDTO>> GetGroupMembersAsync(int lecturerId, int groupId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
@@ -77,7 +58,6 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // BR-054: Lecturer Group-Scoped Access - Check lecturer_id matches
             if (group.LecturerId != lecturerId)
             {
                 throw new Exception("Access denied. You are not assigned to this group.");
@@ -96,10 +76,6 @@ namespace BLL.Services
             }).ToList();
         }
 
-        /// <summary>
-        /// BR-054: Add student to group assigned to the lecturer
-        /// Validates lecturer access before adding member
-        /// </summary>
         public async Task AddStudentToGroupAsync(int lecturerId, int groupId, int studentId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
@@ -108,7 +84,6 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // BR-054: Lecturer Group-Scoped Access - Check lecturer_id matches
             if (group.LecturerId != lecturerId)
             {
                 throw new Exception("Access denied. You are not assigned to this group.");
@@ -136,10 +111,6 @@ namespace BLL.Services
             await _memberRepository.AddAsync(member);
         }
 
-        /// <summary>
-        /// BR-054: Remove student from group assigned to the lecturer
-        /// Validates lecturer access before removing member
-        /// </summary>
         public async Task RemoveStudentFromGroupAsync(int lecturerId, int groupId, int studentId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
@@ -148,7 +119,6 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // BR-054: Lecturer Group-Scoped Access - Check lecturer_id matches
             if (group.LecturerId != lecturerId)
             {
                 throw new Exception("Access denied. You are not assigned to this group.");
@@ -162,10 +132,6 @@ namespace BLL.Services
             await _memberRepository.RemoveAsync(groupId, studentId);
         }
 
-        /// <summary>
-        /// BR-054: Update group details - Only assigned lecturer can update
-        /// Validates lecturer access before allowing updates
-        /// </summary>
         public async Task<StudentGroupResponseDTO> UpdateGroupAsync(int lecturerId, int groupId, UpdateStudentGroupDTO dto)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
@@ -174,17 +140,14 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // BR-054: Lecturer Group-Scoped Access - Check lecturer_id matches
             if (group.LecturerId != lecturerId)
             {
                 throw new Exception("Access denied. You are not assigned to this group.");
             }
 
-            // Update group name if provided
             if (!string.IsNullOrEmpty(dto.GroupName))
                 group.GroupName = dto.GroupName;
 
-            // BR-054: Only lecturer can update status for their group
             if (dto.Status.HasValue)
                 group.Status = dto.Status.Value;
 
@@ -194,8 +157,6 @@ namespace BLL.Services
             var updatedGroup = await _groupRepository.GetGroupWithDetailsAsync(groupId);
             return MapToGroupResponse(updatedGroup!);
         }
-
-        #region Helper Methods
 
         private StudentGroupResponseDTO MapToGroupResponse(StudentGroup group)
         {
@@ -214,7 +175,5 @@ namespace BLL.Services
                 UpdatedAt = group.UpdatedAt
             };
         }
-
-        #endregion
     }
 }
