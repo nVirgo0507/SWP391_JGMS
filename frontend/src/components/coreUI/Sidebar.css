@@ -1,0 +1,37 @@
+.sidebar {
+  width: 240px;
+  height: 100vh;
+  background: #f8fff9;
+  border-right: 1px solid #e5e7eb;
+  padding: 20px;
+}
+
+.sidebar-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #16a34a;
+}
+
+.sidebar-header span {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.sidebar-menu {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu a {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #111;
+}
+
+.menu a.active {
+  background: #dcfce7;
+  font-weight: 600;
+}
