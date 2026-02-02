@@ -1,11 +1,12 @@
 using BLL.Services;
 using BLL.Services.Interface;
+using DAL.Data;
+using DAL.Models;
 using DAL.Repositories;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Npgsql.NameTranslation;
-using DAL.Models;
 
 
 namespace SWP391_JGMS;
@@ -59,6 +60,12 @@ public class Program
 		builder.Services.AddScoped<IStudentService, StudentService>();
 
         var app = builder.Build();
+
+		using (var scope = app.Services.CreateScope())
+		{
+			var context = scope.ServiceProvider.GetRequiredService<JgmsContext>();
+			DbInitializer.SeedAdmin(context);
+		}
 
 		// Configure the HTTP request pipeline.
 		if (app.Environment.IsDevelopment())
