@@ -1,19 +1,17 @@
-﻿﻿using DAL.Models;
-using System.ComponentModel.DataAnnotations;
+﻿﻿using System.ComponentModel.DataAnnotations;
 
-namespace BLL.DTOs.Admin
+namespace BLL.DTOs.Student
 {
-    public class UpdateUserDTO
+    /// <summary>
+    /// DTO for students to update their basic profile information
+    /// </summary>
+    public class UpdateProfileDTO
     {
-        [EmailAddress]
-        public string? Email { get; set; }
-
-        public string? FullName { get; set; }
-
-        public UserRole? Role { get; set; }
-
-        // Student-specific fields
-        public string? StudentCode { get; set; }
+        /// <summary>
+        /// Phone number
+        /// </summary>
+        [Phone]
+        public string? Phone { get; set; }
 
         /// <summary>
         /// GitHub username.
@@ -24,12 +22,9 @@ namespace BLL.DTOs.Admin
             ErrorMessage = "GitHub username must be alphanumeric with hyphens, 1-39 characters, and cannot start or end with a hyphen")]
         public string? GithubUsername { get; set; }
 
+        /// <summary>
+        /// Jira account ID
+        /// </summary>
         public string? JiraAccountId { get; set; }
-
-        // Lecturer-specific fields
-        public string? Phone { get; set; }
-
-        public UserStatus? Status { get; set; }
     }
 }
-
