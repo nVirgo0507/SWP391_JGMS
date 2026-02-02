@@ -2,6 +2,7 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
+using System.Threading.Tasks;
 
 namespace BLL.Services
 {
@@ -32,11 +33,11 @@ namespace BLL.Services
         /// BR-055: Validates that user is the leader of the group
         /// Throws exception if not the leader
         /// </summary>
-        private async Task ValidateLeaderAccessAsync(int userId, int groupId)
+        private async System.Threading.Tasks.Task ValidateLeaderAccessAsync(int userId, int groupId)
         {
             var groupMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, userId);
             
-            if (groupMember == null || !groupMember.IsLeader)
+            if (groupMember == null || !groupMember.IsLeader.GetValueOrDefault(false))
             {
                 throw new Exception("Access denied. You are not the leader of this group.");
             }
@@ -123,7 +124,7 @@ namespace BLL.Services
         /// BR-055: Delete a requirement for the leader's group
         /// Validates that user is leader of the group
         /// </summary>
-        public async Task DeleteRequirementAsync(int userId, int groupId, int requirementId)
+        public async System.Threading.Tasks.Task DeleteRequirementAsync(int userId, int groupId, int requirementId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
             if (group == null)
@@ -199,7 +200,7 @@ namespace BLL.Services
         /// BR-055: Assign task to team member
         /// Validates that user is leader of the group
         /// </summary>
-        public async Task AssignTaskAsync(int userId, int groupId, int taskId, int memberId)
+        public async System.Threading.Tasks.Task AssignTaskAsync(int userId, int groupId, int taskId, int memberId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
             if (group == null)

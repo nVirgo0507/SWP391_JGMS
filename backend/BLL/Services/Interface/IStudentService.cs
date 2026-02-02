@@ -1,5 +1,6 @@
 ﻿using BLL.DTOs.Student;
-using BLL.DTOs.Admin;
+using AdminDTOs = BLL.DTOs.Admin;
+using System.Threading.Tasks;
 
 namespace BLL.Services.Interface
 {
@@ -17,8 +18,8 @@ namespace BLL.Services.Interface
         System.Threading.Tasks.Task<List<CommitHistoryDTO>> GetCommitHistoryAsync(int userId, int? projectId = null);
         
         // Profile Management
-        System.Threading.Tasks.Task<UserResponseDTO> GetMyProfileAsync(int userId);
-        System.Threading.Tasks.Task<UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto);
+        System.Threading.Tasks.Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int userId);
+        System.Threading.Tasks.Task<AdminDTOs.UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto);
         
         // SRS Document
         System.Threading.Tasks.Task<List<SrsDocumentDTO>> GetSrsDocumentsByProjectAsync(int projectId, int userId);

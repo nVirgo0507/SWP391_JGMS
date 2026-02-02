@@ -2,6 +2,7 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
+using System.Threading.Tasks;
 
 namespace BLL.Services
 {
@@ -24,7 +25,7 @@ namespace BLL.Services
         /// BR-058: Validates that user has admin role
         /// Throws exception if user is not admin
         /// </summary>
-        private async Task ValidateAdminAccessAsync(int userId)
+        private async System.Threading.Tasks.Task ValidateAdminAccessAsync(int userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null || user.Role != UserRole.admin)
@@ -60,7 +61,7 @@ namespace BLL.Services
             // Return updated user response
             return new UserResponseDTO
             {
-                Id = targetUser.Id,
+                UserId = targetUser.UserId,
                 Email = targetUser.Email,
                 FullName = targetUser.FullName,
                 Role = targetUser.Role,
@@ -94,7 +95,7 @@ namespace BLL.Services
             // Return updated user response
             return new UserResponseDTO
             {
-                Id = targetUser.Id,
+                UserId = targetUser.UserId,
                 Email = targetUser.Email,
                 FullName = targetUser.FullName,
                 Role = targetUser.Role,
@@ -133,7 +134,7 @@ namespace BLL.Services
             // Return updated user response
             return new UserResponseDTO
             {
-                Id = targetUser.Id,
+                UserId = targetUser.UserId,
                 Email = targetUser.Email,
                 FullName = targetUser.FullName,
                 Role = targetUser.Role,
@@ -167,7 +168,7 @@ namespace BLL.Services
             // Return updated user response
             return new UserResponseDTO
             {
-                Id = targetUser.Id,
+                UserId = targetUser.UserId,
                 Email = targetUser.Email,
                 FullName = targetUser.FullName,
                 Role = targetUser.Role,

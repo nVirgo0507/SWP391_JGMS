@@ -41,7 +41,7 @@ namespace BLL.Services
         /// BR-057: Validates that user is member of the group
         /// Throws exception if user is not part of the group
         /// </summary>
-        private async Task ValidateGroupMembershipAsync(int userId, int groupId)
+        private async System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
         {
             // TODO: Check group_member table for user membership
             // Verify user is part of the group to allow requirement viewing
@@ -190,5 +190,7 @@ namespace BLL.Services
             // Filter by user_id
             return null;
         }
+
+        #endregion
     }
 }

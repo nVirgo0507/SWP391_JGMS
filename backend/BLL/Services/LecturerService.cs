@@ -2,6 +2,7 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
+using System.Threading.Tasks;
 
 namespace BLL.Services
 {
@@ -46,7 +47,7 @@ namespace BLL.Services
                 throw new Exception("Lecturer not found or invalid user role");
             }
 
-            var groups = await _groupRepository.GetGroupsByLecturerAsync(lecturerId);
+            var groups = await _groupRepository.GetByLecturerIdAsync(lecturerId);
             return groups.Select(MapToGroupResponse).ToList();
         }
 
@@ -63,7 +64,7 @@ namespace BLL.Services
                 throw new Exception("Access denied. You are not assigned to this group.");
             }
 
-            var members = await _memberRepository.GetMembersByGroupIdAsync(groupId);
+            var members = await _memberRepository.GetByGroupIdAsync(groupId);
             return members.Select(m => new GroupMemberResponseDTO
             {
                 MemberId = m.MembershipId,
@@ -71,12 +72,12 @@ namespace BLL.Services
                 UserId = m.UserId,
                 UserName = m.User.FullName,
                 Email = m.User.Email,
-                IsLeader = m.IsLeader,
+                IsLeader = m.IsLeader.GetValueOrDefault(false),
                 JoinedAt = m.JoinedAt
             }).ToList();
         }
 
-        public async Task AddStudentToGroupAsync(int lecturerId, int groupId, int studentId)
+        public async System.Threading.Tasks.Task AddStudentToGroupAsync(int lecturerId, int groupId, int studentId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
             if (group == null)
@@ -111,7 +112,7 @@ namespace BLL.Services
             await _memberRepository.AddAsync(member);
         }
 
-        public async Task RemoveStudentFromGroupAsync(int lecturerId, int groupId, int studentId)
+        public async System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int lecturerId, int groupId, int studentId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
             if (group == null)

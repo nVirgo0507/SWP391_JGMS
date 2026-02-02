@@ -23,7 +23,11 @@ public class Program
                 options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
         builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
+		builder.Services.AddSwaggerGen(options =>
+		{
+			// Use full type name for schema ids to avoid collisions between DTOs with same class name
+			options.CustomSchemaIds(type => type.FullName);
+		});
 
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
@@ -56,7 +60,6 @@ public class Program
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
 		builder.Services.AddScoped<IAdminService, AdminService>();
-<<<<<<< HEAD
 		// BR-054: Lecturer Group-Scoped Access service
 		builder.Services.AddScoped<ILecturerService, LecturerService>();
 		// BR-055: Team Leader Group-Scoped Access service
@@ -65,9 +68,7 @@ public class Program
 		builder.Services.AddScoped<ITeamMemberService, TeamMemberService>();
 		// BR-058: Admin Integration Configuration service
 		builder.Services.AddScoped<IIntegrationService, IntegrationService>();
-=======
 		builder.Services.AddScoped<IStudentService, StudentService>();
->>>>>>> c54bf6a565199c90c2f3d30747af87cda9a4efc7
 
         var app = builder.Build();
 
