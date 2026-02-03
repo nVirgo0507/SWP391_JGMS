@@ -35,6 +35,12 @@ namespace BLL.Services
                 throw new Exception("Email address already exists in the system");
             }
 
+            // BR-002: Role Assignment - Each user must be assigned exactly one role
+            if (!Enum.IsDefined(typeof(UserRole), dto.Role))
+            {
+                throw new Exception("Invalid role selected");
+            }
+
             // BR-005: Password Strength
             var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$");
             if (!regex.IsMatch(dto.Password))
@@ -103,8 +109,15 @@ namespace BLL.Services
             if (!string.IsNullOrEmpty(dto.FullName))
                 user.FullName = dto.FullName;
 
+            // BR-002: Role Assignment - Each user must be assigned exactly one role
             if (dto.Role.HasValue)
+            {
+                if (!Enum.IsDefined(typeof(UserRole), dto.Role.Value))
+                {
+                    throw new Exception("Invalid role selected");
+                }
                 user.Role = dto.Role.Value;
+            }
 
             if (!string.IsNullOrEmpty(dto.GithubUsername))
                 user.GithubUsername = dto.GithubUsername;
@@ -138,9 +151,10 @@ namespace BLL.Services
 
         public async Task<List<UserResponseDTO>> GetUsersByRoleAsync(string role)
         {
+            // BR-002: Role Assignment - Validate role parameter
             if (!Enum.TryParse<UserRole>(role, true, out var userRole))
             {
-                throw new Exception("Invalid role specified");
+                throw new Exception("Invalid role selected");
             }
 
             var users = await _userRepository.GetByRoleAsync(userRole);

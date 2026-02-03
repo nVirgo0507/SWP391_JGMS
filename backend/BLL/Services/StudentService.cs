@@ -1,5 +1,5 @@
 ﻿using BLL.DTOs.Student;
-using BLL.DTOs.Admin;
+using AdminDTOs = BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -200,7 +200,7 @@ namespace BLL.Services
 
         #region Profile Management
 
-        public async Task<UserResponseDTO> GetMyProfileAsync(int userId)
+        public async Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -212,7 +212,7 @@ namespace BLL.Services
             return MapToUserResponse(user);
         }
 
-        public async Task<UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
+        public async Task<AdminDTOs.UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -309,9 +309,9 @@ namespace BLL.Services
             };
         }
 
-        private UserResponseDTO MapToUserResponse(User user)
+        private AdminDTOs.UserResponseDTO MapToUserResponse(User user)
         {
-            return new UserResponseDTO
+            return new AdminDTOs.UserResponseDTO
             {
                 UserId = user.UserId,
                 Email = user.Email,
