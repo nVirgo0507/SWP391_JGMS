@@ -519,39 +519,41 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO admin;
 -- Note: All passwords are "Password123" for testing purposes
 -- You should change these in production
 -- Hash generated using Microsoft.Extensions.Identity.Core PasswordHasher (V2 format)
+-- Note: Same password produces same hash with same salt (for testing convenience)
+-- In production, regenerate unique hashes for each user
 
 -- Admin User
 INSERT INTO "USER" (email, password_hash, full_name, phone, role, status) VALUES
-('admin@swp391.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Quản Trị Viên Hệ Thống', '+84901234567', 'admin', 'active');
+('admin@swp391.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Quản Trị Viên Hệ Thống', '0901234567', 'admin', 'active');
 
 -- Lecturers (Giảng viên)
 INSERT INTO "USER" (email, password_hash, full_name, phone, role, status) VALUES
-('nguyenvana@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Nguyễn Văn An', '+84912345678', 'lecturer', 'active'),
-('tranthib@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Trần Thị Bình', '+84923456789', 'lecturer', 'active'),
-('phamvanc@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Phạm Văn Cường', '+84934567890', 'lecturer', 'active');
+('nguyenvana@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Nguyễn Văn An', '0912345678', 'lecturer', 'active'),
+('tranthib@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Trần Thị Bình', '0923456789', 'lecturer', 'active'),
+('phamvanc@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Phạm Văn Cường', '0934567890', 'lecturer', 'active');
 
 -- Students (Sinh viên)
 INSERT INTO "USER" (email, password_hash, full_name, phone, student_code, github_username, jira_account_id, role, status) VALUES
 -- Group 1 students
-('levand@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Lê Văn Dũng', '+84945678901', 'SE171234', 'levandung', 'levand@student.fpt.edu.vn', 'student', 'active'),
-('ngothie@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Ngô Thị Em', '+84956789012', 'SE171235', 'ngothiem', 'ngothie@student.fpt.edu.vn', 'student', 'active'),
-('hoangvanf@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Hoàng Văn Phong', '+84967890123', 'SE171236', 'hoangvanphong', 'hoangvanf@student.fpt.edu.vn', 'student', 'active'),
-('vuthig@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Vũ Thị Giang', '+84978901234', 'SE171237', 'vuthigiang', 'vuthig@student.fpt.edu.vn', 'student', 'active'),
-('doanvanh@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đoàn Văn Hùng', '+84989012345', 'SE171238', 'doanvanhung', 'doanvanh@student.fpt.edu.vn', 'student', 'active'),
+('levand@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Lê Văn Dũng', '0945678901', 'SE171234', 'levandung', 'levand@student.fpt.edu.vn', 'student', 'active'),
+('ngothie@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Ngô Thị Em', '0956789012', 'SE171235', 'ngothiem', 'ngothie@student.fpt.edu.vn', 'student', 'active'),
+('hoangvanf@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Hoàng Văn Phong', '0967890123', 'SE171236', 'hoangvanphong', 'hoangvanf@student.fpt.edu.vn', 'student', 'active'),
+('vuthig@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Vũ Thị Giang', '0978901234', 'SE171237', 'vuthigiang', 'vuthig@student.fpt.edu.vn', 'student', 'active'),
+('doanvanh@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đoàn Văn Hùng', '0989012345', 'SE171238', 'doanvanhung', 'doanvanh@student.fpt.edu.vn', 'student', 'active'),
 
 -- Group 2 students
-('buithii@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Bùi Thị Lan', '+84990123456', 'SE171239', 'buithilan', 'buithii@student.fpt.edu.vn', 'student', 'active'),
-('dangvank@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đặng Văn Khoa', '+84901234567', 'SE171240', 'dangvankhoa', 'dangvank@student.fpt.edu.vn', 'student', 'active'),
-('lyvanh@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Lý Văn Minh', '+84912345678', 'SE171241', 'lyvanminh', 'lyvanh@student.fpt.edu.vn', 'student', 'active'),
-('macthim@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Mạc Thị Nga', '+84923456789', 'SE171242', 'macthinga', 'macthim@student.fpt.edu.vn', 'student', 'active'),
-('phanvano@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Phan Văn Ông', '+84934567890', 'SE171243', 'phanvanong', 'phanvano@student.fpt.edu.vn', 'student', 'active'),
+('buithii@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Bùi Thị Lan', '0990123456', 'SE171239', 'buithilan', 'buithii@student.fpt.edu.vn', 'student', 'active'),
+('dangvank@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đặng Văn Khoa', '0902345678', 'SE171240', 'dangvankhoa', 'dangvank@student.fpt.edu.vn', 'student', 'active'),
+('lyvanh@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Lý Văn Minh', '0913456789', 'SE171241', 'lyvanminh', 'lyvanh@student.fpt.edu.vn', 'student', 'active'),
+('macthim@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Mạc Thị Nga', '0924567890', 'SE171242', 'macthinga', 'macthim@student.fpt.edu.vn', 'student', 'active'),
+('phanvano@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Phan Văn Ông', '0935678901', 'SE171243', 'phanvanong', 'phanvano@student.fpt.edu.vn', 'student', 'active'),
 
 -- Group 3 students
-('tathibp@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Tạ Thị Phương', '+84945678901', 'SE171244', 'tathiphuong', 'tathibp@student.fpt.edu.vn', 'student', 'active'),
-('quachvanq@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Quách Văn Quang', '+84956789012', 'SE171245', 'quachvanquang', 'quachvanq@student.fpt.edu.vn', 'student', 'active'),
-('dinhthir@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đinh Thị Rung', '+84967890123', 'SE171246', 'dinhthirung', 'dinhthir@student.fpt.edu.vn', 'student', 'active'),
-('dovans@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đỗ Văn Sơn', '+84978901234', 'SE171247', 'dovanson', 'dovans@student.fpt.edu.vn', 'student', 'active'),
-('rangthibt@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Rạng Thị Thanh', '+84989012345', 'SE171248', 'rangthithanh', 'rangthibt@student.fpt.edu.vn', 'student', 'active');
+('tathibp@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Tạ Thị Phương', '0946789012', 'SE171244', 'tathiphuong', 'tathibp@student.fpt.edu.vn', 'student', 'active'),
+('quachvanq@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Quách Văn Quang', '0957890123', 'SE171245', 'quachvanquang', 'quachvanq@student.fpt.edu.vn', 'student', 'active'),
+('dinhthir@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đinh Thị Rung', '0968901234', 'SE171246', 'dinhthirung', 'dinhthir@student.fpt.edu.vn', 'student', 'active'),
+('dovans@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đỗ Văn Sơn', '0979012345', 'SE171247', 'dovanson', 'dovans@student.fpt.edu.vn', 'student', 'active'),
+('rangthibt@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Rạng Thị Thanh', '0980123456', 'SE171248', 'rangthithanh', 'rangthibt@student.fpt.edu.vn', 'student', 'active');
 
 COMMENT ON DATABASE JGMS IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
 

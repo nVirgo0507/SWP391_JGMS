@@ -40,11 +40,11 @@
 
         /// <summary>
         /// Validates Vietnamese phone number format
-        /// Valid formats:
-        /// - 0XXXXXXXXX (10 digits starting with 0)
-        /// - +84XXXXXXXXX (12 characters)
+        /// Note: Phone numbers with +84 prefix are accepted as input but must be normalized first.
+        /// This method validates the normalized format only.
+        /// Valid format: 0XXXXXXXXX (10 digits starting with 0)
         /// </summary>
-        /// <param name="phone">The phone number to validate</param>
+        /// <param name="phone">The phone number to validate (should be normalized first)</param>
         /// <returns>True if valid, false otherwise</returns>
         public static bool IsValidVietnamesePhone(string phone)
         {

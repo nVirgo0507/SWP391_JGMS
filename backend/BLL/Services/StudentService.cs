@@ -272,7 +272,23 @@ namespace BLL.Services
             }
 
             // UpdatedAt is set by repository layer (UserRepository.UpdateAsync)
-            await _userRepository.UpdateAsync(user);
+            try
+            {
+                await _userRepository.UpdateAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Handle database unique constraint violations (race condition protection)
+                if (ex.InnerException?.Message.Contains("duplicate key") == true ||
+                    ex.Message.Contains("duplicate key") == true)
+                {
+                    if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
+                    {
+                        throw new Exception("Phone number already exists in the system");
+                    }
+                }
+                throw;
+            }
 
             return MapToUserResponse(user);
         }

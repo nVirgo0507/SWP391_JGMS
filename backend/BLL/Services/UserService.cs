@@ -83,7 +83,32 @@ namespace BLL.Services
 			};
 
 			user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
-			await _userRepository.AddAsync(user);
+
+			try
+			{
+				await _userRepository.AddAsync(user);
+			}
+			catch (Exception ex)
+			{
+				// Handle database unique constraint violations (race condition protection)
+				if (ex.InnerException?.Message.Contains("duplicate key") == true ||
+					ex.Message.Contains("duplicate key") == true)
+				{
+					if (ex.InnerException?.Message.Contains("email") == true || ex.Message.Contains("email") == true)
+					{
+						throw new Exception("Email address already exists in the system");
+					}
+					else if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
+					{
+						throw new Exception("Phone number already exists in the system");
+					}
+					else if (ex.InnerException?.Message.Contains("student_code") == true || ex.Message.Contains("student_code") == true)
+					{
+						throw new Exception("Student code already exists in the system");
+					}
+				}
+				throw;
+			}
 		}
 	}
 }

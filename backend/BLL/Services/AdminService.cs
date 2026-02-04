@@ -103,7 +103,34 @@ namespace BLL.Services
             };
 
             user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
-            await _userRepository.AddAsync(user);
+
+            try
+            {
+                await _userRepository.AddAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Handle database unique constraint violations (race condition protection)
+                // PostgreSQL throws exception with specific constraint names
+                if (ex.InnerException?.Message.Contains("duplicate key") == true ||
+                    ex.Message.Contains("duplicate key") == true)
+                {
+                    if (ex.InnerException?.Message.Contains("email") == true || ex.Message.Contains("email") == true)
+                    {
+                        throw new Exception("Email address already exists in the system");
+                    }
+                    else if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
+                    {
+                        throw new Exception("Phone number already exists in the system");
+                    }
+                    else if (ex.InnerException?.Message.Contains("student_code") == true || ex.Message.Contains("student_code") == true)
+                    {
+                        throw new Exception("Student code already exists in the system");
+                    }
+                }
+                // Re-throw if it's not a duplicate key error
+                throw;
+            }
 
             return MapToUserResponse(user);
         }
@@ -180,10 +207,9 @@ namespace BLL.Services
 
             // Validate role-specific requirements after all updates
             var finalRole = dto.Role ?? user.Role;
-            var finalPhone = dto.Phone ?? user.Phone;
 
-            // Phone is required for all roles
-            if (string.IsNullOrWhiteSpace(finalPhone))
+            // Phone is required for all roles (check the actual user.Phone which has normalized value)
+            if (string.IsNullOrWhiteSpace(user.Phone))
             {
                 throw new Exception("Phone number is required for all users");
             }
@@ -211,7 +237,31 @@ namespace BLL.Services
                 }
             }
             // BR-060: Preserve Audit Trail (UpdatedAt is handled in repository)
-            await _userRepository.UpdateAsync(user);
+            try
+            {
+                await _userRepository.UpdateAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Handle database unique constraint violations (race condition protection)
+                if (ex.InnerException?.Message.Contains("duplicate key") == true ||
+                    ex.Message.Contains("duplicate key") == true)
+                {
+                    if (ex.InnerException?.Message.Contains("email") == true || ex.Message.Contains("email") == true)
+                    {
+                        throw new Exception("Email address already exists in the system");
+                    }
+                    else if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
+                    {
+                        throw new Exception("Phone number already exists in the system");
+                    }
+                    else if (ex.InnerException?.Message.Contains("student_code") == true || ex.Message.Contains("student_code") == true)
+                    {
+                        throw new Exception("Student code already exists in the system");
+                    }
+                }
+                throw;
+            }
 
             return MapToUserResponse(user);
         }
