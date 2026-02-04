@@ -279,15 +279,8 @@ namespace BLL.Services
             catch (Exception ex)
             {
                 // Handle database unique constraint violations (race condition protection)
-                if (ex.InnerException?.Message.Contains("duplicate key") == true ||
-                    ex.Message.Contains("duplicate key") == true)
-                {
-                    if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
-                    {
-                        throw new Exception("Phone number already exists in the system");
-                    }
-                }
-                throw;
+                DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+                throw; // Re-throw if not handled
             }
 
             return MapToUserResponse(user);

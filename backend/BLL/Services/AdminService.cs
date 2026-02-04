@@ -62,30 +62,12 @@ namespace BLL.Services
                 throw new Exception("Phone number already exists in the system");
             }
 
-            // Role-specific validation
-            if (dto.Role == UserRole.student)
+            // Validate student code uniqueness (if provided)
+            // Note: Required field validation is handled by CreateUserDTO.Validate()
+            if (!string.IsNullOrWhiteSpace(dto.StudentCode) &&
+                await _userRepository.StudentCodeExistsAsync(dto.StudentCode))
             {
-                // Students must have student code, github username, and jira account id
-                if (string.IsNullOrWhiteSpace(dto.StudentCode))
-                {
-                    throw new Exception("Student code is required for students");
-                }
-
-                if (string.IsNullOrWhiteSpace(dto.GithubUsername))
-                {
-                    throw new Exception("GitHub username is required for students");
-                }
-
-                if (string.IsNullOrWhiteSpace(dto.JiraAccountId))
-                {
-                    throw new Exception("Jira account ID is required for students");
-                }
-
-                // Validate student code uniqueness
-                if (await _userRepository.StudentCodeExistsAsync(dto.StudentCode))
-                {
-                    throw new Exception("Student code already exists in the system");
-                }
+                throw new Exception("Student code already exists in the system");
             }
 
             var user = new User
@@ -111,25 +93,8 @@ namespace BLL.Services
             catch (Exception ex)
             {
                 // Handle database unique constraint violations (race condition protection)
-                // PostgreSQL throws exception with specific constraint names
-                if (ex.InnerException?.Message.Contains("duplicate key") == true ||
-                    ex.Message.Contains("duplicate key") == true)
-                {
-                    if (ex.InnerException?.Message.Contains("email") == true || ex.Message.Contains("email") == true)
-                    {
-                        throw new Exception("Email address already exists in the system");
-                    }
-                    else if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
-                    {
-                        throw new Exception("Phone number already exists in the system");
-                    }
-                    else if (ex.InnerException?.Message.Contains("student_code") == true || ex.Message.Contains("student_code") == true)
-                    {
-                        throw new Exception("Student code already exists in the system");
-                    }
-                }
-                // Re-throw if it's not a duplicate key error
-                throw;
+                DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+                throw; // Re-throw if not handled
             }
 
             return MapToUserResponse(user);
@@ -244,23 +209,8 @@ namespace BLL.Services
             catch (Exception ex)
             {
                 // Handle database unique constraint violations (race condition protection)
-                if (ex.InnerException?.Message.Contains("duplicate key") == true ||
-                    ex.Message.Contains("duplicate key") == true)
-                {
-                    if (ex.InnerException?.Message.Contains("email") == true || ex.Message.Contains("email") == true)
-                    {
-                        throw new Exception("Email address already exists in the system");
-                    }
-                    else if (ex.InnerException?.Message.Contains("phone") == true || ex.Message.Contains("phone") == true)
-                    {
-                        throw new Exception("Phone number already exists in the system");
-                    }
-                    else if (ex.InnerException?.Message.Contains("student_code") == true || ex.Message.Contains("student_code") == true)
-                    {
-                        throw new Exception("Student code already exists in the system");
-                    }
-                }
-                throw;
+                DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+                throw; // Re-throw if not handled
             }
 
             return MapToUserResponse(user);
