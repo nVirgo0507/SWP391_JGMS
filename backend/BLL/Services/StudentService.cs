@@ -1,5 +1,6 @@
-﻿using BLL.DTOs.Student;
+﻿﻿using BLL.DTOs.Student;
 using AdminDTOs = BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -224,7 +225,20 @@ namespace BLL.Services
             // Students can only update specific fields
             if (!string.IsNullOrEmpty(dto.Phone))
             {
-                user.Phone = dto.Phone;
+                var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+
+                if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+                {
+                    throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+                }
+
+                // Check phone uniqueness if being changed
+                if (normalizedPhone != user.Phone && await _userRepository.PhoneExistsAsync(normalizedPhone))
+                {
+                    throw new Exception("Phone number already exists in the system");
+                }
+
+                user.Phone = normalizedPhone;
             }
 
             if (!string.IsNullOrEmpty(dto.GithubUsername))
@@ -235,6 +249,26 @@ namespace BLL.Services
             if (!string.IsNullOrEmpty(dto.JiraAccountId))
             {
                 user.JiraAccountId = dto.JiraAccountId;
+            }
+
+            // Validate that required fields are not empty after update
+            // For students, phone, githubUsername, and jiraAccountId are required
+            if (user.Role == DAL.Models.UserRole.student)
+            {
+                if (string.IsNullOrWhiteSpace(user.Phone))
+                {
+                    throw new Exception("Phone number is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(user.GithubUsername))
+                {
+                    throw new Exception("GitHub username is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(user.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID is required for students");
+                }
             }
 
             // UpdatedAt is set by repository layer (UserRepository.UpdateAsync)

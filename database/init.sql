@@ -35,8 +35,8 @@ CREATE TABLE "USER" (
     github_username VARCHAR(100),
     jira_account_id VARCHAR(100),
 
-    -- Lecturer-specific fields
-    phone VARCHAR(20),
+    -- Required for all roles
+    phone VARCHAR(20) UNIQUE NOT NULL,
     status user_status DEFAULT 'active',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -47,6 +47,7 @@ CREATE INDEX idx_user_role ON "USER"(role);
 CREATE INDEX idx_user_email ON "USER"(email);
 CREATE INDEX idx_user_student_code ON "USER"(student_code);
 CREATE INDEX idx_user_github_username ON "USER"(github_username);
+CREATE INDEX idx_user_phone ON "USER"(phone);
 
 COMMENT ON TABLE "USER" IS 'All users: Admin, Lecturer, Student';
 

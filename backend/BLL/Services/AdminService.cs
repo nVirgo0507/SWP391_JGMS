@@ -1,4 +1,5 @@
-﻿﻿﻿using BLL.DTOs.Admin;
+﻿﻿﻿﻿using BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -48,6 +49,19 @@ namespace BLL.Services
                 throw new Exception("Password must be at least 8 characters with uppercase, lowercase, and number");
             }
 
+            // Normalize and validate phone number
+            var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+            if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+            {
+                throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+            }
+
+            // Check phone uniqueness
+            if (await _userRepository.PhoneExistsAsync(normalizedPhone))
+            {
+                throw new Exception("Phone number already exists in the system");
+            }
+
             // Role-specific validation
             if (dto.Role == UserRole.student)
             {
@@ -82,7 +96,7 @@ namespace BLL.Services
                 StudentCode = dto.StudentCode,
                 GithubUsername = dto.GithubUsername,
                 JiraAccountId = dto.JiraAccountId,
-                Phone = dto.Phone,
+                Phone = normalizedPhone, // Use normalized phone (converts +84 to 0)
                 Status = dto.Status, // BR-006: Active Status Default
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -142,14 +156,38 @@ namespace BLL.Services
             if (!string.IsNullOrEmpty(dto.JiraAccountId))
                 user.JiraAccountId = dto.JiraAccountId;
 
+            // Normalize and validate phone if being changed
             if (!string.IsNullOrEmpty(dto.Phone))
-                user.Phone = dto.Phone;
+            {
+                var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+
+                if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+                {
+                    throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+                }
+
+                // Check phone uniqueness if being changed
+                if (normalizedPhone != user.Phone && await _userRepository.PhoneExistsAsync(normalizedPhone))
+                {
+                    throw new Exception("Phone number already exists in the system");
+                }
+
+                user.Phone = normalizedPhone;
+            }
 
             if (dto.Status.HasValue)
                 user.Status = dto.Status.Value;
 
             // Validate role-specific requirements after all updates
             var finalRole = dto.Role ?? user.Role;
+            var finalPhone = dto.Phone ?? user.Phone;
+
+            // Phone is required for all roles
+            if (string.IsNullOrWhiteSpace(finalPhone))
+            {
+                throw new Exception("Phone number is required for all users");
+            }
+
             if (finalRole == UserRole.student)
             {
                 // Ensure student has all required fields
