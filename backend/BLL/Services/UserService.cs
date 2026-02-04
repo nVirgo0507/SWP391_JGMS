@@ -1,4 +1,5 @@
-﻿using BLL.DTOs;
+﻿﻿using BLL.DTOs;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -16,7 +17,7 @@ namespace BLL.Services
 	{
 		private readonly IUserRepository _userRepository;
 		private readonly PasswordHasher<User> _passwordHasher;
-		public UserService(IUserRepository userRepository) 
+		public UserService(IUserRepository userRepository)
 		{
 			_userRepository = userRepository;
 			_passwordHasher = new PasswordHasher<User>();
@@ -56,10 +57,24 @@ namespace BLL.Services
 				throw new Exception("Password must be at least 8 characters with uppercase, lowercase, and number");
 			}
 
+			// Normalize and validate phone number
+			var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+			if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+			{
+				throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+			}
+
+			// Check phone uniqueness
+			if (await _userRepository.PhoneExistsAsync(normalizedPhone))
+			{
+				throw new Exception("Phone number already exists in the system");
+			}
+
 			var user = new User
 			{
 				Email = dto.Email,
 				FullName = dto.FullName,
+				Phone = normalizedPhone, // Use normalized phone
 				StudentCode = dto.StudentCode,
 				Role = UserRole.student,
 				Status = UserStatus.active,
@@ -68,7 +83,17 @@ namespace BLL.Services
 			};
 
 			user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
-			await _userRepository.AddAsync(user);
+
+			try
+			{
+				await _userRepository.AddAsync(user);
+			}
+			catch (Exception ex)
+			{
+				// Handle database unique constraint violations (race condition protection)
+				DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+				throw; // Re-throw if not handled
+			}
 		}
 	}
 }
