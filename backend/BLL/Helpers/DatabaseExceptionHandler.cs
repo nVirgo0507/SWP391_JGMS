@@ -54,6 +54,14 @@ namespace BLL.Helpers
             {
                 throw new Exception("Student code already exists in the system");
             }
+            else if (constraintName.Contains("github") || detailMessage.Contains("github") || message.Contains("github"))
+            {
+                throw new Exception("GitHub username already exists in the system");
+            }
+            else if (constraintName.Contains("jira") || detailMessage.Contains("jira") || message.Contains("jira"))
+            {
+                throw new Exception("Jira account ID already exists in the system");
+            }
             else
             {
                 // Generic unique constraint violation
@@ -76,6 +84,14 @@ namespace BLL.Helpers
             else if (errorMessage.Contains("student_code"))
             {
                 throw new Exception("Student code already exists in the system");
+            }
+            else if (errorMessage.Contains("github"))
+            {
+                throw new Exception("GitHub username already exists in the system");
+            }
+            else if (errorMessage.Contains("jira"))
+            {
+                throw new Exception("Jira account ID already exists in the system");
             }
             else
             {

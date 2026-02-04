@@ -32,6 +32,16 @@ namespace DAL.Repositories
 			return await _context.Users.AnyAsync(x => x.Phone == phone);
 		}
 
+		public async Task<bool> GithubUsernameExistsAsync(string githubUsername)
+		{
+			return await _context.Users.AnyAsync(x => x.GithubUsername == githubUsername);
+		}
+
+		public async Task<bool> JiraAccountIdExistsAsync(string jiraAccountId)
+		{
+			return await _context.Users.AnyAsync(x => x.JiraAccountId == jiraAccountId);
+		}
+
 		public async Task<User?> GetByEmailAsync(string email)
 		{
 			return await _context.Users.FirstOrDefaultAsync(x => x.Email == email);

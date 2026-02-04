@@ -32,8 +32,8 @@ CREATE TABLE "USER" (
 
     -- Student-specific fields
     student_code VARCHAR(50) UNIQUE,
-    github_username VARCHAR(100),
-    jira_account_id VARCHAR(100),
+    github_username VARCHAR(100) UNIQUE,
+    jira_account_id VARCHAR(100) UNIQUE,
 
     -- Required for all roles
     phone VARCHAR(20) UNIQUE NOT NULL,
@@ -47,6 +47,7 @@ CREATE INDEX idx_user_role ON "USER"(role);
 CREATE INDEX idx_user_email ON "USER"(email);
 CREATE INDEX idx_user_student_code ON "USER"(student_code);
 CREATE INDEX idx_user_github_username ON "USER"(github_username);
+CREATE INDEX idx_user_jira_account_id ON "USER"(jira_account_id);
 CREATE INDEX idx_user_phone ON "USER"(phone);
 
 COMMENT ON TABLE "USER" IS 'All users: Admin, Lecturer, Student';

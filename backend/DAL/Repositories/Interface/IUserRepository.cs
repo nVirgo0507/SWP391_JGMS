@@ -13,6 +13,8 @@ namespace DAL.Repositories.Interface
 		System.Threading.Tasks.Task AddAsync(User user);
 		Task<bool> EmailExistsAsync(string email);
 		Task<bool> PhoneExistsAsync(string phone);
+		Task<bool> GithubUsernameExistsAsync(string githubUsername);
+		Task<bool> JiraAccountIdExistsAsync(string jiraAccountId);
 
 		// Admin methods
 		Task<User?> GetByIdAsync(int userId);

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using BLL.DTOs.Admin;
+﻿using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
@@ -68,6 +68,20 @@ namespace BLL.Services
                 await _userRepository.StudentCodeExistsAsync(dto.StudentCode))
             {
                 throw new Exception("Student code already exists in the system");
+            }
+
+            // Validate GitHub username uniqueness (if provided)
+            if (!string.IsNullOrWhiteSpace(dto.GithubUsername) &&
+                await _userRepository.GithubUsernameExistsAsync(dto.GithubUsername))
+            {
+                throw new Exception("GitHub username already exists in the system");
+            }
+
+            // Validate Jira account ID uniqueness (if provided)
+            if (!string.IsNullOrWhiteSpace(dto.JiraAccountId) &&
+                await _userRepository.JiraAccountIdExistsAsync(dto.JiraAccountId))
+            {
+                throw new Exception("Jira account ID already exists in the system");
             }
 
             var user = new User
@@ -143,10 +157,26 @@ namespace BLL.Services
             }
 
             if (!string.IsNullOrEmpty(dto.GithubUsername))
+            {
+                // Check uniqueness if being changed
+                if (dto.GithubUsername != user.GithubUsername &&
+                    await _userRepository.GithubUsernameExistsAsync(dto.GithubUsername))
+                {
+                    throw new Exception("GitHub username already exists in the system");
+                }
                 user.GithubUsername = dto.GithubUsername;
+            }
 
             if (!string.IsNullOrEmpty(dto.JiraAccountId))
+            {
+                // Check uniqueness if being changed
+                if (dto.JiraAccountId != user.JiraAccountId &&
+                    await _userRepository.JiraAccountIdExistsAsync(dto.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID already exists in the system");
+                }
                 user.JiraAccountId = dto.JiraAccountId;
+            }
 
             // Normalize and validate phone if being changed
             if (!string.IsNullOrEmpty(dto.Phone))

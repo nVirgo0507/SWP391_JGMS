@@ -243,11 +243,23 @@ namespace BLL.Services
 
             if (!string.IsNullOrEmpty(dto.GithubUsername))
             {
+                // Check uniqueness if being changed
+                if (dto.GithubUsername != user.GithubUsername &&
+                    await _userRepository.GithubUsernameExistsAsync(dto.GithubUsername))
+                {
+                    throw new Exception("GitHub username already exists in the system");
+                }
                 user.GithubUsername = dto.GithubUsername;
             }
 
             if (!string.IsNullOrEmpty(dto.JiraAccountId))
             {
+                // Check uniqueness if being changed
+                if (dto.JiraAccountId != user.JiraAccountId &&
+                    await _userRepository.JiraAccountIdExistsAsync(dto.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID already exists in the system");
+                }
                 user.JiraAccountId = dto.JiraAccountId;
             }
 
