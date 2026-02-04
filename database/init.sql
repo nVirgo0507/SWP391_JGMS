@@ -29,16 +29,16 @@ CREATE TABLE "USER" (
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     role user_role NOT NULL,
-    
+
     -- Student-specific fields
     student_code VARCHAR(50) UNIQUE,
     github_username VARCHAR(100),
     jira_account_id VARCHAR(100),
-    
+
     -- Lecturer-specific fields
     phone VARCHAR(20),
     status user_status DEFAULT 'active',
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -61,7 +61,7 @@ CREATE TABLE STUDENT_GROUP (
     lecturer_id INTEGER NOT NULL REFERENCES "USER"(user_id),
     leader_id INTEGER REFERENCES "USER"(user_id),
     status user_status DEFAULT 'active',
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -81,7 +81,7 @@ CREATE TABLE GROUP_MEMBER (
     user_id INTEGER NOT NULL REFERENCES "USER"(user_id),
     is_leader BOOLEAN DEFAULT FALSE,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     CONSTRAINT unique_group_member UNIQUE (group_id, user_id)
 );
 
@@ -104,7 +104,7 @@ CREATE TABLE PROJECT (
     start_date DATE,
     end_date DATE,
     status project_status DEFAULT 'active',
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -128,7 +128,7 @@ CREATE TABLE JIRA_INTEGRATION (
     project_key VARCHAR(50) NOT NULL,
     last_sync TIMESTAMP,
     sync_status sync_status DEFAULT 'pending',
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -151,7 +151,7 @@ CREATE TABLE GITHUB_INTEGRATION (
     repo_name VARCHAR(100) NOT NULL,
     last_sync TIMESTAMP,
     sync_status sync_status DEFAULT 'pending',
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -181,7 +181,7 @@ CREATE TABLE JIRA_ISSUE (
     created_date TIMESTAMP,
     updated_date TIMESTAMP,
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -209,7 +209,7 @@ CREATE TABLE REQUIREMENT (
     requirement_type requirement_type NOT NULL,
     priority priority_level DEFAULT 'medium',
     created_by INTEGER NOT NULL REFERENCES "USER"(user_id),
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -237,7 +237,7 @@ CREATE TABLE TASK (
     priority priority_level DEFAULT 'medium',
     due_date DATE,
     completed_at TIMESTAMP,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -265,7 +265,7 @@ CREATE TABLE GITHUB_COMMIT (
     commit_date TIMESTAMP NOT NULL,
     branch_name VARCHAR(100),
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -290,7 +290,7 @@ CREATE TABLE COMMIT (
     deletions INTEGER DEFAULT 0,
     changed_files INTEGER DEFAULT 0,
     commit_date TIMESTAMP NOT NULL,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -317,7 +317,7 @@ CREATE TABLE SRS_DOCUMENT (
     status document_status DEFAULT 'draft',
     generated_by INTEGER NOT NULL REFERENCES "USER"(user_id),
     generated_at TIMESTAMP,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -336,11 +336,11 @@ CREATE TABLE SRS_INCLUDED_REQUIREMENT (
     document_id INTEGER NOT NULL REFERENCES SRS_DOCUMENT(document_id),
     requirement_id INTEGER NOT NULL REFERENCES REQUIREMENT(requirement_id),
     section_number VARCHAR(20),
-    
+
     -- Snapshots to preserve history
     snapshot_title VARCHAR(255),
     snapshot_description TEXT,
-    
+
     CONSTRAINT unique_doc_req UNIQUE (document_id, requirement_id)
 );
 
@@ -369,7 +369,7 @@ CREATE TABLE PROGRESS_REPORT (
     file_path VARCHAR(255),
     generated_by INTEGER NOT NULL REFERENCES "USER"(user_id),
     generated_at TIMESTAMP NOT NULL,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -395,10 +395,10 @@ CREATE TABLE COMMIT_STATISTICS (
     total_changed_files INTEGER DEFAULT 0,
     commit_frequency DECIMAL DEFAULT 0,
     avg_commit_size INTEGER DEFAULT 0,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     CONSTRAINT unique_stat_period UNIQUE (project_id, user_id, period_start, period_end)
 );
 
@@ -421,9 +421,9 @@ CREATE TABLE TEAM_COMMIT_SUMMARY (
     total_deletions INTEGER DEFAULT 0,
     active_contributors INTEGER DEFAULT 0,
     summary_data JSONB,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     CONSTRAINT unique_project_date UNIQUE (project_id, summary_date)
 );
 
@@ -446,10 +446,10 @@ CREATE TABLE PERSONAL_TASK_STATISTICS (
     overdue_tasks INTEGER DEFAULT 0,
     completion_rate DECIMAL DEFAULT 0,
     last_calculated TIMESTAMP,
-    
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     CONSTRAINT unique_user_project UNIQUE (user_id, project_id)
 );
 
@@ -512,10 +512,45 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO admin;
 -- ============================================================================
 
 -- Insert a default admin user (password: Password_1 - hashed with Microsoft.AspNetCore.Identity.PasswordHasher)
--- Note: You should change this password in production
--- Hash generated using Microsoft.AspNetCore.Identity.PasswordHasher<User>
-INSERT INTO "USER" (email, password_hash, full_name, role, status) VALUES
-('admin@swp391.edu.vn', 'AQAAAAIAAYagAAAAEABr5SSWk+HY71406Q2uF2fMXiKCWcboNEnUw+3V8FLINDCIbxDe9NQvSuFHkcyrrQ==', 'System Administrator', 'admin', 'active');
+-- ============================================================================
+-- SEED DATA - Example Users (Vietnamese)
+-- ============================================================================
+-- Note: All passwords are "Password123" for testing purposes
+-- You should change these in production
+-- Hash generated using Microsoft.Extensions.Identity.Core PasswordHasher (V2 format)
+
+-- Admin User
+INSERT INTO "USER" (email, password_hash, full_name, phone, role, status) VALUES
+('admin@swp391.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Quản Trị Viên Hệ Thống', '+84901234567', 'admin', 'active');
+
+-- Lecturers (Giảng viên)
+INSERT INTO "USER" (email, password_hash, full_name, phone, role, status) VALUES
+('nguyenvana@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Nguyễn Văn An', '+84912345678', 'lecturer', 'active'),
+('tranthib@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Trần Thị Bình', '+84923456789', 'lecturer', 'active'),
+('phamvanc@fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Phạm Văn Cường', '+84934567890', 'lecturer', 'active');
+
+-- Students (Sinh viên)
+INSERT INTO "USER" (email, password_hash, full_name, phone, student_code, github_username, jira_account_id, role, status) VALUES
+-- Group 1 students
+('levand@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Lê Văn Dũng', '+84945678901', 'SE171234', 'levandung', 'levand@student.fpt.edu.vn', 'student', 'active'),
+('ngothie@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Ngô Thị Em', '+84956789012', 'SE171235', 'ngothiem', 'ngothie@student.fpt.edu.vn', 'student', 'active'),
+('hoangvanf@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Hoàng Văn Phong', '+84967890123', 'SE171236', 'hoangvanphong', 'hoangvanf@student.fpt.edu.vn', 'student', 'active'),
+('vuthig@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Vũ Thị Giang', '+84978901234', 'SE171237', 'vuthigiang', 'vuthig@student.fpt.edu.vn', 'student', 'active'),
+('doanvanh@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đoàn Văn Hùng', '+84989012345', 'SE171238', 'doanvanhung', 'doanvanh@student.fpt.edu.vn', 'student', 'active'),
+
+-- Group 2 students
+('buithii@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Bùi Thị Lan', '+84990123456', 'SE171239', 'buithilan', 'buithii@student.fpt.edu.vn', 'student', 'active'),
+('dangvank@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đặng Văn Khoa', '+84901234567', 'SE171240', 'dangvankhoa', 'dangvank@student.fpt.edu.vn', 'student', 'active'),
+('lyvanh@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Lý Văn Minh', '+84912345678', 'SE171241', 'lyvanminh', 'lyvanh@student.fpt.edu.vn', 'student', 'active'),
+('macthim@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Mạc Thị Nga', '+84923456789', 'SE171242', 'macthinga', 'macthim@student.fpt.edu.vn', 'student', 'active'),
+('phanvano@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Phan Văn Ông', '+84934567890', 'SE171243', 'phanvanong', 'phanvano@student.fpt.edu.vn', 'student', 'active'),
+
+-- Group 3 students
+('tathibp@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Tạ Thị Phương', '+84945678901', 'SE171244', 'tathiphuong', 'tathibp@student.fpt.edu.vn', 'student', 'active'),
+('quachvanq@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Quách Văn Quang', '+84956789012', 'SE171245', 'quachvanquang', 'quachvanq@student.fpt.edu.vn', 'student', 'active'),
+('dinhthir@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đinh Thị Rung', '+84967890123', 'SE171246', 'dinhthirung', 'dinhthir@student.fpt.edu.vn', 'student', 'active'),
+('dovans@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Đỗ Văn Sơn', '+84978901234', 'SE171247', 'dovanson', 'dovans@student.fpt.edu.vn', 'student', 'active'),
+('rangthibt@student.fpt.edu.vn', 'AQAAAAIAAYagAAAAEHJyvwi6uCt5eNUkyBCVR1I27D5YadrZS7/GwMT5+fvW1JfREzPV5x0lUnTajw5I3A==', 'Rạng Thị Thanh', '+84989012345', 'SE171248', 'rangthithanh', 'rangthibt@student.fpt.edu.vn', 'student', 'active');
 
 COMMENT ON DATABASE JGMS IS 'SWP391 Project Management System - Supporting Tool for Requirements and Project Progress Management';
 

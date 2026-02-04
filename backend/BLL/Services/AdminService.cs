@@ -1,4 +1,4 @@
-﻿﻿using BLL.DTOs.Admin;
+﻿﻿﻿using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -48,9 +48,26 @@ namespace BLL.Services
                 throw new Exception("Password must be at least 8 characters with uppercase, lowercase, and number");
             }
 
-            // Validate student code uniqueness if provided
-            if (!string.IsNullOrEmpty(dto.StudentCode))
+            // Role-specific validation
+            if (dto.Role == UserRole.student)
             {
+                // Students must have student code, github username, and jira account id
+                if (string.IsNullOrWhiteSpace(dto.StudentCode))
+                {
+                    throw new Exception("Student code is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.GithubUsername))
+                {
+                    throw new Exception("GitHub username is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID is required for students");
+                }
+
+                // Validate student code uniqueness
                 if (await _userRepository.StudentCodeExistsAsync(dto.StudentCode))
                 {
                     throw new Exception("Student code already exists in the system");
@@ -131,6 +148,30 @@ namespace BLL.Services
             if (dto.Status.HasValue)
                 user.Status = dto.Status.Value;
 
+            // Validate role-specific requirements after all updates
+            var finalRole = dto.Role ?? user.Role;
+            if (finalRole == UserRole.student)
+            {
+                // Ensure student has all required fields
+                var finalStudentCode = dto.StudentCode ?? user.StudentCode;
+                var finalGithubUsername = dto.GithubUsername ?? user.GithubUsername;
+                var finalJiraAccountId = dto.JiraAccountId ?? user.JiraAccountId;
+
+                if (string.IsNullOrWhiteSpace(finalStudentCode))
+                {
+                    throw new Exception("Student code is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(finalGithubUsername))
+                {
+                    throw new Exception("GitHub username is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(finalJiraAccountId))
+                {
+                    throw new Exception("Jira account ID is required for students");
+                }
+            }
             // BR-060: Preserve Audit Trail (UpdatedAt is handled in repository)
             await _userRepository.UpdateAsync(user);
 
