@@ -17,12 +17,17 @@ namespace BLL.Services
     public class TeamMemberService : ITeamMemberService
     {
         private readonly IUserRepository _userRepository;
-        // TODO: Add task, personal task statistic, commit statistic repositories when available
-        // TODO: Add requirement repository for BR-057
+        private readonly ITaskRepository _taskRepository;
+        private readonly IPersonalTaskStatisticRepository _statisticRepository;
 
-        public TeamMemberService(IUserRepository userRepository)
+        public TeamMemberService(
+            IUserRepository userRepository,
+            ITaskRepository taskRepository,
+            IPersonalTaskStatisticRepository statisticRepository)
         {
             _userRepository = userRepository;
+            _taskRepository = taskRepository;
+            _statisticRepository = statisticRepository;
         }
 
         /// <summary>
@@ -112,9 +117,13 @@ namespace BLL.Services
         }
 
         /// <summary>
+        /// <summary>
         /// BR-056: Update task status - Only for assigned tasks
         /// Validates that TASK.assigned_to matches user_id
         /// Allows updating task status and completion status
+        /// Enforces forward-only progression: todo -> in_progress -> done.
+        /// On invalid backwards transition an exception with message
+        /// "Invalid status transition. Tasks cannot move backwards." is thrown.
         /// </summary>
         public async Task<TaskResponseDTO> UpdateTaskStatusAsync(int userId, int taskId, UpdateTaskStatusDTO dto)
         {
@@ -125,12 +134,26 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get task from repository
-            // BR-056: Validate task is assigned to this user
-            // ValidateSelfAccessAsync(userId, task.AssignedTo);
-            // 
-            // TODO: Update task status in repository
-            throw new NotImplementedException("Task repository needed");
+            var task = await _taskRepository.GetByIdAsync(taskId);
+            if (task == null)
+                throw new Exception("Task not found");
+
+            // Validate assigned to this user
+            ValidateSelfAccessAsync(userId, task.AssignedTo);
+
+            // Use shared helper to parse and validate status transitions
+            var parsed = BLL.Services.Helpers.TaskStatusHelper.ParseStatus(dto.Status);
+            BLL.Services.Helpers.TaskStatusHelper.ValidateForwardTransition(task.Status, parsed);
+
+            task.Status = parsed;
+            if (parsed == DAL.Models.TaskStatus.done)
+            {
+                task.CompletedAt = DateTime.UtcNow;
+            }
+
+            await _taskRepository.UpdateAsync(task);
+
+            return MapToTaskResponse(task);
         }
 
         /// <summary>
@@ -147,12 +170,30 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get task from repository
-            // BR-056: Validate task is assigned to this user
-            // ValidateSelfAccessAsync(userId, task.AssignedTo);
-            //
-            // TODO: Mark task as completed with current timestamp
-            throw new NotImplementedException("Task repository needed");
+            var task = await _taskRepository.GetByIdAsync(taskId);
+            if (task == null)
+                throw new Exception("Task not found");
+
+            ValidateSelfAccessAsync(userId, task.AssignedTo);
+
+            // If already done, return
+            if (task.Status == DAL.Models.TaskStatus.done)
+            {
+                return MapToTaskResponse(task);
+            }
+
+            // Ensure we are not moving backwards (complete is forward)
+            if ((int)DAL.Models.TaskStatus.done < (int)task.Status)
+            {
+                throw new Exception("Invalid status transition. Tasks cannot move backwards.");
+            }
+
+            task.Status = DAL.Models.TaskStatus.done;
+            task.CompletedAt = DateTime.UtcNow;
+
+            await _taskRepository.UpdateAsync(task);
+
+            return MapToTaskResponse(task);
         }
 
         /// <summary>
@@ -189,6 +230,24 @@ namespace BLL.Services
             // TODO: Get personal commit statistics from repository
             // Filter by user_id
             return null;
+        }
+
+        private TaskResponseDTO MapToTaskResponse(DAL.Models.Task task)
+        {
+            return new TaskResponseDTO
+            {
+                TaskId = task.TaskId,
+                RequirementId = task.RequirementId,
+                JiraIssueId = task.JiraIssueId,
+                AssignedTo = task.AssignedTo,
+                Title = task.Title,
+                Description = task.Description,
+                DueDate = task.DueDate,
+                CompletedAt = task.CompletedAt,
+                CreatedAt = task.CreatedAt,
+                UpdatedAt = task.UpdatedAt,
+                AssignedToName = task.AssignedToNavigation?.FullName
+            };
         }
 
         #endregion
