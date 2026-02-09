@@ -1,5 +1,5 @@
 ﻿using BLL.DTOs.Student;
-using BLL.DTOs.Admin;
+using AdminDTOs = BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -62,6 +62,11 @@ namespace BLL.Services
 
         #region Update Task Status
 
+        /// <summary>
+        /// BR-035: Update the status of a task assigned to the student.
+        /// Enforces business rule: statuses may only progress forward: todo -> in_progress -> done.
+        /// On invalid backwards transition an exception with message "Invalid status transition. Tasks cannot move backwards." is thrown.
+        /// </summary>
         public async System.Threading.Tasks.Task UpdateTaskStatusAsync(int taskId, int userId, UpdateTaskStatusDTO dto)
         {
             var task = await _taskRepository.GetByIdAsync(taskId);
@@ -78,42 +83,14 @@ namespace BLL.Services
                 throw new UnauthorizedAccessException("You do not have permission to update this task");
             }
 
-            // Parse and update task status
-            // Normalize input: trim first, then lowercase, replace separators, map synonyms
-            // Accepts: "todo", "To Do", "to_do", "in progress", "in-progress", "done", "Done", etc.
-            var normalized = dto.Status
-                .Trim()                   // Trim whitespace first
-                .ToLower()                // Convert to lowercase
-                .Replace(" ", "_")        // "to do" → "to_do"
-                .Replace("-", "_");       // "in-progress" → "in_progress"
+            // Parse and validate status using shared helper that enforces BR-035 (forward-only progression)
+            var parsedStatus = BLL.Services.Helpers.TaskStatusHelper.ParseStatus(dto.Status);
+            BLL.Services.Helpers.TaskStatusHelper.ValidateForwardTransition(task.Status, parsedStatus);
 
-            // Map common variants to actual enum values
-            // "to_do" → "todo", "completed" → "done"
-            var statusString = normalized switch
+            task.Status = parsedStatus;
+            if (parsedStatus == DAL.Models.TaskStatus.done)
             {
-                "to_do" => "todo",
-                "completed" => "done",
-                _ => normalized
-            };
-
-            if (Enum.TryParse<DAL.Models.TaskStatus>(statusString, true, out var taskStatus))
-            {
-                task.Status = taskStatus;
-
-                // Set completion timestamp when status is done
-                if (taskStatus == DAL.Models.TaskStatus.done)
-                {
-                    task.CompletedAt = DateTime.UtcNow;
-                }
-                else if (task.CompletedAt.HasValue && taskStatus != DAL.Models.TaskStatus.done)
-                {
-                    // If moving back from completed status, clear the completed date
-                    task.CompletedAt = null;
-                }
-            }
-            else
-            {
-                throw new Exception($"Invalid status: '{dto.Status}'. Valid values: 'todo'/'to do', 'in_progress'/'in progress', 'done'/'completed' (case-insensitive)");
+                task.CompletedAt = DateTime.UtcNow;
             }
 
             // TODO: Integrate with Jira API when implemented
@@ -200,7 +177,7 @@ namespace BLL.Services
 
         #region Profile Management
 
-        public async Task<UserResponseDTO> GetMyProfileAsync(int userId)
+        public async Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -212,7 +189,7 @@ namespace BLL.Services
             return MapToUserResponse(user);
         }
 
-        public async Task<UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
+        public async Task<AdminDTOs.UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -309,9 +286,9 @@ namespace BLL.Services
             };
         }
 
-        private UserResponseDTO MapToUserResponse(User user)
+        private AdminDTOs.UserResponseDTO MapToUserResponse(User user)
         {
-            return new UserResponseDTO
+            return new AdminDTOs.UserResponseDTO
             {
                 UserId = user.UserId,
                 Email = user.Email,

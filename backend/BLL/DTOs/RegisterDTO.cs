@@ -7,6 +7,11 @@ using System.Threading.Tasks;
 
 namespace BLL.DTOs
 {
+	/// <summary>
+	/// BR-001: Request DTO for user registration
+	/// BR-005: Password must meet strength requirements
+	/// BR-006: New users default to active status
+	/// </summary>
 	public class RegisterDTO
 	{
 		[Required]

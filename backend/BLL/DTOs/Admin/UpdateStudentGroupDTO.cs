@@ -2,6 +2,10 @@
 
 namespace BLL.DTOs.Admin
 {
+    /// <summary>
+    /// BR-054: Request DTO to update student group details
+    /// Lecturers can update group information and status
+    /// </summary>
     public class UpdateStudentGroupDTO
     {
         public string? GroupCode { get; set; }
