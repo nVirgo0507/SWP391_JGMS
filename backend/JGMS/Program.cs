@@ -4,10 +4,15 @@ using DAL.Data;
 using DAL.Models;
 using DAL.Repositories;
 using DAL.Repositories.Interface;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Npgsql;
 using Npgsql.NameTranslation;
-
+using System.Text;
+using Microsoft.OpenApi.Models;
+using System.Security.Claims;
 
 namespace SWP391_JGMS;
 
@@ -22,13 +27,73 @@ public class Program
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-            });
+			options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+			});
         builder.Services.AddEndpointsApiExplorer();
-		builder.Services.AddSwaggerGen(options =>
+
+		builder.Services.AddSwaggerGen(c =>
 		{
-			// Use full type name for schema ids to avoid collisions between DTOs with same class name
-			options.CustomSchemaIds(type => type.FullName);
+			c.SwaggerDoc("v1", new OpenApiInfo
+			{
+				Title = "SWP391 JGMS API",
+				Version = "v1"
+			});
+			
+			c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+			{
+				Name = "Authorization",
+				Type = SecuritySchemeType.Http,
+				Scheme = "Bearer",
+				BearerFormat = "JWT",
+				In = ParameterLocation.Header,
+				Description = "Enter: Bearer {your JWT token}"
+			});
+
+			c.AddSecurityRequirement(new OpenApiSecurityRequirement
+			{
+				{
+					new OpenApiSecurityScheme
+					{
+						Reference = new OpenApiReference
+						{
+							Type = ReferenceType.SecurityScheme,
+							Id = "Bearer"
+						}
+					},
+					Array.Empty<string>()
+				}
+			});
+
+			c.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
 		});
+
+		var jwtSettings = builder.Configuration.GetSection("Jwt");
+		var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
+
+		builder.Services.AddAuthentication(options =>
+		{
+			options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+			options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+		}).AddJwtBearer(options =>
+		{
+			options.RequireHttpsMetadata = false;
+			options.SaveToken = true;
+			options.TokenValidationParameters = new TokenValidationParameters
+			{
+				ValidateIssuer = true,
+				ValidateAudience = true,
+				ValidateLifetime = true,
+				ValidateIssuerSigningKey = true,
+
+				ValidIssuer = jwtSettings["Issuer"],
+				ValidAudience = jwtSettings["Audience"],
+				IssuerSigningKey = new SymmetricSecurityKey(key),
+
+				RoleClaimType = ClaimTypes.Role
+			};
+		});
+
+		builder.Services.AddAuthorization();
 
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
 		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
@@ -87,7 +152,8 @@ public class Program
         }
 
         app.UseHttpsRedirection();
-        app.UseAuthorization();
+		app.UseAuthentication();
+		app.UseAuthorization();
         app.MapControllers();
 
         app.Run();
