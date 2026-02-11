@@ -117,8 +117,8 @@ namespace BLL.Services
         }
 
         /// <summary>
-        /// <summary>
         /// BR-056: Update task status - Only for assigned tasks
+        /// BR-038: When task status changes to 'done', auto-set completed_at to current timestamp.
         /// Validates that TASK.assigned_to matches user_id
         /// Allows updating task status and completion status
         /// Enforces forward-only progression: todo -> in_progress -> done.
@@ -146,6 +146,8 @@ namespace BLL.Services
             BLL.Services.Helpers.TaskStatusHelper.ValidateForwardTransition(task.Status, parsed);
 
             task.Status = parsed;
+            // BR-038: Completed Task Must Have Completion Date
+            // Auto-set completed_at when status='done'
             if (parsed == DAL.Models.TaskStatus.done)
             {
                 task.CompletedAt = DateTime.UtcNow;
@@ -158,8 +160,9 @@ namespace BLL.Services
 
         /// <summary>
         /// BR-056: Mark task as completed
+        /// BR-038: When task status changes to 'done', auto-set completed_at to current timestamp.
         /// Validates that TASK.assigned_to matches user_id
-        /// Sets CompletedAt timestamp
+        /// Sets CompletedAt timestamp to current UTC time
         /// </summary>
         public async Task<TaskResponseDTO> CompleteTaskAsync(int userId, int taskId)
         {
@@ -189,6 +192,8 @@ namespace BLL.Services
             }
 
             task.Status = DAL.Models.TaskStatus.done;
+            // BR-038: Completed Task Must Have Completion Date
+            // Auto-set completed_at when status='done'
             task.CompletedAt = DateTime.UtcNow;
 
             await _taskRepository.UpdateAsync(task);

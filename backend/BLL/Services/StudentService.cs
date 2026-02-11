@@ -64,6 +64,7 @@ namespace BLL.Services
 
         /// <summary>
         /// BR-035: Update the status of a task assigned to the student.
+        /// BR-038: When task status changes to 'done', auto-set completed_at to current timestamp.
         /// Enforces business rule: statuses may only progress forward: todo -> in_progress -> done.
         /// On invalid backwards transition an exception with message "Invalid status transition. Tasks cannot move backwards." is thrown.
         /// </summary>
@@ -88,6 +89,8 @@ namespace BLL.Services
             BLL.Services.Helpers.TaskStatusHelper.ValidateForwardTransition(task.Status, parsedStatus);
 
             task.Status = parsedStatus;
+            // BR-038: Completed Task Must Have Completion Date
+            // Auto-set completed_at when status='done'
             if (parsedStatus == DAL.Models.TaskStatus.done)
             {
                 task.CompletedAt = DateTime.UtcNow;
