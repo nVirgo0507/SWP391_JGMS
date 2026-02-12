@@ -1,4 +1,4 @@
-﻿﻿using Microsoft.EntityFrameworkCore;
+﻿﻿﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System;
 using System.Collections.Generic;
@@ -360,6 +360,8 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.ProjectKey)
                 .HasMaxLength(50)
                 .HasColumnName("project_key");
+            entity.Property(e => e.SyncStatus)
+                .HasColumnName("sync_status");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
@@ -414,6 +416,9 @@ public partial class JgmsContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("last_synced");
+            entity.Property(e => e.Priority)
+                .HasColumnName("priority")
+                .HasColumnType("jira_priority");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)

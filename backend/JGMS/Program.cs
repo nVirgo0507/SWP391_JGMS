@@ -38,7 +38,7 @@ public class Program
 				Title = "SWP391 JGMS API",
 				Version = "v1"
 			});
-			
+
 			c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
 			{
 				Name = "Authorization",
@@ -122,6 +122,15 @@ public class Program
 		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
 		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
 		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
+		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
+		builder.Services.AddScoped<IJiraIntegrationRepository, JiraIntegrationRepository>();
+		builder.Services.AddScoped<IJiraIssueRepository, JiraIssueRepository>();
+
+		// Register HttpClient for Jira API
+		builder.Services.AddHttpClient();
+
+		// Register Data Protection for encrypting API tokens
+		builder.Services.AddDataProtection();
 
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
@@ -135,6 +144,9 @@ public class Program
 		// BR-058: Admin Integration Configuration service
 		builder.Services.AddScoped<IIntegrationService, IntegrationService>();
 		builder.Services.AddScoped<IStudentService, StudentService>();
+		// Jira Integration services
+		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
+		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
 
         var app = builder.Build();
 

@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -21,6 +21,8 @@ public partial class JiraIssue
     public string Summary { get; set; } = null!;
 
     public string? Description { get; set; }
+
+    public JiraPriority? Priority { get; set; }
 
     public string Status { get; set; } = null!;
 

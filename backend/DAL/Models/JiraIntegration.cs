@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -24,6 +24,8 @@ public partial class JiraIntegration
     public string ProjectKey { get; set; } = null!;
 
     public DateTime? LastSync { get; set; }
+
+    public SyncStatus SyncStatus { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 
