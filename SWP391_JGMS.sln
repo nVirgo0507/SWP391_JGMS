@@ -20,6 +20,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{A1B2C3D4-E5F6-7890-1234-567890ABCDEF}"
 	ProjectSection(SolutionItems) = preProject
 		docs\placeholder.txt = docs\placeholder.txt
+		docs\jira-integration-testing-guide.md = docs\jira-integration-testing-guide.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{FEDCBA09-8765-4321-0987-6543210FEDCB}"
