@@ -1,4 +1,5 @@
-﻿﻿using BLL.DTOs.Admin;
+﻿using BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -35,6 +36,12 @@ namespace BLL.Services
                 throw new Exception("Email address already exists in the system");
             }
 
+            // BR-002: Role Assignment - Each user must be assigned exactly one role
+            if (!Enum.IsDefined(typeof(UserRole), dto.Role))
+            {
+                throw new Exception("Invalid role selected");
+            }
+
             // BR-005: Password Strength
             var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$");
             if (!regex.IsMatch(dto.Password))
@@ -42,13 +49,39 @@ namespace BLL.Services
                 throw new Exception("Password must be at least 8 characters with uppercase, lowercase, and number");
             }
 
-            // Validate student code uniqueness if provided
-            if (!string.IsNullOrEmpty(dto.StudentCode))
+            // Normalize and validate phone number
+            var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+            if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
             {
-                if (await _userRepository.StudentCodeExistsAsync(dto.StudentCode))
-                {
-                    throw new Exception("Student code already exists in the system");
-                }
+                throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+            }
+
+            // Check phone uniqueness
+            if (await _userRepository.PhoneExistsAsync(normalizedPhone))
+            {
+                throw new Exception("Phone number already exists in the system");
+            }
+
+            // Validate student code uniqueness (if provided)
+            // Note: Required field validation is handled by CreateUserDTO.Validate()
+            if (!string.IsNullOrWhiteSpace(dto.StudentCode) &&
+                await _userRepository.StudentCodeExistsAsync(dto.StudentCode))
+            {
+                throw new Exception("Student code already exists in the system");
+            }
+
+            // Validate GitHub username uniqueness (if provided)
+            if (!string.IsNullOrWhiteSpace(dto.GithubUsername) &&
+                await _userRepository.GithubUsernameExistsAsync(dto.GithubUsername))
+            {
+                throw new Exception("GitHub username already exists in the system");
+            }
+
+            // Validate Jira account ID uniqueness (if provided)
+            if (!string.IsNullOrWhiteSpace(dto.JiraAccountId) &&
+                await _userRepository.JiraAccountIdExistsAsync(dto.JiraAccountId))
+            {
+                throw new Exception("Jira account ID already exists in the system");
             }
 
             var user = new User
@@ -59,14 +92,24 @@ namespace BLL.Services
                 StudentCode = dto.StudentCode,
                 GithubUsername = dto.GithubUsername,
                 JiraAccountId = dto.JiraAccountId,
-                Phone = dto.Phone,
+                Phone = normalizedPhone, // Use normalized phone (converts +84 to 0)
                 Status = dto.Status, // BR-006: Active Status Default
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
-            await _userRepository.AddAsync(user);
+
+            try
+            {
+                await _userRepository.AddAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Handle database unique constraint violations (race condition protection)
+                DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+                throw; // Re-throw if not handled
+            }
 
             return MapToUserResponse(user);
         }
@@ -103,23 +146,102 @@ namespace BLL.Services
             if (!string.IsNullOrEmpty(dto.FullName))
                 user.FullName = dto.FullName;
 
+            // BR-002: Role Assignment - Each user must be assigned exactly one role
             if (dto.Role.HasValue)
+            {
+                if (!Enum.IsDefined(typeof(UserRole), dto.Role.Value))
+                {
+                    throw new Exception("Invalid role selected");
+                }
                 user.Role = dto.Role.Value;
+            }
 
             if (!string.IsNullOrEmpty(dto.GithubUsername))
+            {
+                // Check uniqueness if being changed
+                if (dto.GithubUsername != user.GithubUsername &&
+                    await _userRepository.GithubUsernameExistsAsync(dto.GithubUsername))
+                {
+                    throw new Exception("GitHub username already exists in the system");
+                }
                 user.GithubUsername = dto.GithubUsername;
+            }
 
             if (!string.IsNullOrEmpty(dto.JiraAccountId))
+            {
+                // Check uniqueness if being changed
+                if (dto.JiraAccountId != user.JiraAccountId &&
+                    await _userRepository.JiraAccountIdExistsAsync(dto.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID already exists in the system");
+                }
                 user.JiraAccountId = dto.JiraAccountId;
+            }
 
+            // Normalize and validate phone if being changed
             if (!string.IsNullOrEmpty(dto.Phone))
-                user.Phone = dto.Phone;
+            {
+                var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+
+                if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+                {
+                    throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+                }
+
+                // Check phone uniqueness if being changed
+                if (normalizedPhone != user.Phone && await _userRepository.PhoneExistsAsync(normalizedPhone))
+                {
+                    throw new Exception("Phone number already exists in the system");
+                }
+
+                user.Phone = normalizedPhone;
+            }
 
             if (dto.Status.HasValue)
                 user.Status = dto.Status.Value;
 
+            // Validate role-specific requirements after all updates
+            var finalRole = dto.Role ?? user.Role;
+
+            // Phone is required for all roles (check the actual user.Phone which has normalized value)
+            if (string.IsNullOrWhiteSpace(user.Phone))
+            {
+                throw new Exception("Phone number is required for all users");
+            }
+
+            if (finalRole == UserRole.student)
+            {
+                // Ensure student has all required fields
+                var finalStudentCode = dto.StudentCode ?? user.StudentCode;
+                var finalGithubUsername = dto.GithubUsername ?? user.GithubUsername;
+                var finalJiraAccountId = dto.JiraAccountId ?? user.JiraAccountId;
+
+                if (string.IsNullOrWhiteSpace(finalStudentCode))
+                {
+                    throw new Exception("Student code is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(finalGithubUsername))
+                {
+                    throw new Exception("GitHub username is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(finalJiraAccountId))
+                {
+                    throw new Exception("Jira account ID is required for students");
+                }
+            }
             // BR-060: Preserve Audit Trail (UpdatedAt is handled in repository)
-            await _userRepository.UpdateAsync(user);
+            try
+            {
+                await _userRepository.UpdateAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Handle database unique constraint violations (race condition protection)
+                DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+                throw; // Re-throw if not handled
+            }
 
             return MapToUserResponse(user);
         }
@@ -138,9 +260,10 @@ namespace BLL.Services
 
         public async Task<List<UserResponseDTO>> GetUsersByRoleAsync(string role)
         {
+            // BR-002: Role Assignment - Validate role parameter
             if (!Enum.TryParse<UserRole>(role, true, out var userRole))
             {
-                throw new Exception("Invalid role specified");
+                throw new Exception("Invalid role selected");
             }
 
             var users = await _userRepository.GetByRoleAsync(userRole);

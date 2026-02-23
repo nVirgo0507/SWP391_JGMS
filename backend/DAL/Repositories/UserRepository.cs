@@ -1,4 +1,4 @@
-﻿﻿using DAL.Models;
+﻿﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -25,6 +25,21 @@ namespace DAL.Repositories
 		public async Task<bool> EmailExistsAsync(string email)
 		{
 			return await _context.Users.AnyAsync(x => x.Email == email);
+		}
+
+		public async Task<bool> PhoneExistsAsync(string phone)
+		{
+			return await _context.Users.AnyAsync(x => x.Phone == phone);
+		}
+
+		public async Task<bool> GithubUsernameExistsAsync(string githubUsername)
+		{
+			return await _context.Users.AnyAsync(x => x.GithubUsername == githubUsername);
+		}
+
+		public async Task<bool> JiraAccountIdExistsAsync(string jiraAccountId)
+		{
+			return await _context.Users.AnyAsync(x => x.JiraAccountId == jiraAccountId);
 		}
 
 		public async Task<User?> GetByEmailAsync(string email)
@@ -76,7 +91,7 @@ namespace DAL.Repositories
 			var hasGroupMembers = await _context.GroupMembers.AnyAsync(gm => gm.UserId == userId);
 			var hasRequirements = await _context.Requirements.AnyAsync(r => r.CreatedBy == userId);
 			var hasTasks = await _context.Tasks.AnyAsync(t => t.AssignedTo == userId);
-			
+
 			return !hasGroups && !hasGroupMembers && !hasRequirements && !hasTasks;
 		}
 	}

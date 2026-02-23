@@ -1,5 +1,6 @@
-﻿using BLL.DTOs.Student;
-using BLL.DTOs.Admin;
+﻿﻿using BLL.DTOs.Student;
+using AdminDTOs = BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -200,7 +201,7 @@ namespace BLL.Services
 
         #region Profile Management
 
-        public async Task<UserResponseDTO> GetMyProfileAsync(int userId)
+        public async Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -212,7 +213,7 @@ namespace BLL.Services
             return MapToUserResponse(user);
         }
 
-        public async Task<UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
+        public async Task<AdminDTOs.UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto)
         {
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -224,21 +225,75 @@ namespace BLL.Services
             // Students can only update specific fields
             if (!string.IsNullOrEmpty(dto.Phone))
             {
-                user.Phone = dto.Phone;
+                var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+
+                if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+                {
+                    throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+                }
+
+                // Check phone uniqueness if being changed
+                if (normalizedPhone != user.Phone && await _userRepository.PhoneExistsAsync(normalizedPhone))
+                {
+                    throw new Exception("Phone number already exists in the system");
+                }
+
+                user.Phone = normalizedPhone;
             }
 
             if (!string.IsNullOrEmpty(dto.GithubUsername))
             {
+                // Check uniqueness if being changed
+                if (dto.GithubUsername != user.GithubUsername &&
+                    await _userRepository.GithubUsernameExistsAsync(dto.GithubUsername))
+                {
+                    throw new Exception("GitHub username already exists in the system");
+                }
                 user.GithubUsername = dto.GithubUsername;
             }
 
             if (!string.IsNullOrEmpty(dto.JiraAccountId))
             {
+                // Check uniqueness if being changed
+                if (dto.JiraAccountId != user.JiraAccountId &&
+                    await _userRepository.JiraAccountIdExistsAsync(dto.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID already exists in the system");
+                }
                 user.JiraAccountId = dto.JiraAccountId;
             }
 
+            // Validate that required fields are not empty after update
+            // For students, phone, githubUsername, and jiraAccountId are required
+            if (user.Role == DAL.Models.UserRole.student)
+            {
+                if (string.IsNullOrWhiteSpace(user.Phone))
+                {
+                    throw new Exception("Phone number is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(user.GithubUsername))
+                {
+                    throw new Exception("GitHub username is required for students");
+                }
+
+                if (string.IsNullOrWhiteSpace(user.JiraAccountId))
+                {
+                    throw new Exception("Jira account ID is required for students");
+                }
+            }
+
             // UpdatedAt is set by repository layer (UserRepository.UpdateAsync)
-            await _userRepository.UpdateAsync(user);
+            try
+            {
+                await _userRepository.UpdateAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Handle database unique constraint violations (race condition protection)
+                DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+                throw; // Re-throw if not handled
+            }
 
             return MapToUserResponse(user);
         }
@@ -309,9 +364,9 @@ namespace BLL.Services
             };
         }
 
-        private UserResponseDTO MapToUserResponse(User user)
+        private AdminDTOs.UserResponseDTO MapToUserResponse(User user)
         {
-            return new UserResponseDTO
+            return new AdminDTOs.UserResponseDTO
             {
                 UserId = user.UserId,
                 Email = user.Email,

@@ -29,16 +29,14 @@ namespace SWP391_JGMS.Controllers
 		[HttpPost("login")]
 		public async Task<IActionResult> Login(LoginDTO dto)
 		{
-			var user = await _userService.LoginAsync(dto);
+			var token = await _userService.LoginAsync(dto);
 
-			if (user == null)
+			if (token == null)
 				return Unauthorized("Invalid email or password");
 
 			return Ok(new
 			{
-				user.UserId,
-				user.Email,
-				user.FullName
+				accessToken = token
 			});
 		}
 	}
