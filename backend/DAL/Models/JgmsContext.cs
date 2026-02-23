@@ -263,7 +263,7 @@ public partial class JgmsContext : DbContext
 
             entity.Property(e => e.IntegrationId).HasColumnName("integration_id");
             entity.Property(e => e.ApiToken)
-                .HasMaxLength(255)
+                .HasColumnType("text")
                 .HasComment("Encrypted token")
                 .HasColumnName("api_token");
             entity.Property(e => e.CreatedAt)
@@ -340,7 +340,7 @@ public partial class JgmsContext : DbContext
 
             entity.Property(e => e.IntegrationId).HasColumnName("integration_id");
             entity.Property(e => e.ApiToken)
-                .HasMaxLength(255)
+                .HasColumnType("text")
                 .HasComment("Encrypted token")
                 .HasColumnName("api_token");
             entity.Property(e => e.CreatedAt)

@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Jira;
+﻿﻿using BLL.DTOs.Jira;
 using BLL.Services.Interface;
 using System.Net.Http.Headers;
 using System.Text;
@@ -84,12 +84,19 @@ namespace BLL.Services
         {
             var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
 
-            // Use JQL (Jira Query Language) to search for issues
+            // Use the new /rest/api/3/search/jql endpoint (POST) as the old /rest/api/3/search (GET) has been removed
+            // See: https://developer.atlassian.com/changelog/#CHANGE-2046
             var jql = $"project={projectKey} ORDER BY updated DESC";
-            var encodedJql = Uri.EscapeDataString(jql);
-            var url = $"/rest/api/3/search?jql={encodedJql}&maxResults=1000&fields=summary,description,status,issuetype,priority,assignee,created,updated";
+            var requestBody = new
+            {
+                jql = jql,
+                maxResults = 1000,
+                fields = new[] { "summary", "description", "status", "issuetype", "priority", "assignee", "created", "updated" }
+            };
 
-            var response = await client.GetAsync(url);
+            var jsonBody = JsonSerializer.Serialize(requestBody);
+            var httpContent = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/rest/api/3/search/jql", httpContent);
 
             if (!response.IsSuccessStatusCode)
             {
