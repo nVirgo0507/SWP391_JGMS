@@ -16,7 +16,7 @@ namespace BLL.Services.Helpers
         /// Accepts case-insensitive variants like "To Do", "to_do", "in-progress", "completed".
         /// Throws <see cref="System.Exception"/> when the value is empty or unrecognized.
         /// </summary>
-        public static TaskStatus ParseStatus(string input)
+        public static DAL.Models.TaskStatus ParseStatus(string input)
         {
             if (string.IsNullOrWhiteSpace(input))
             {
@@ -32,7 +32,7 @@ namespace BLL.Services.Helpers
                 _ => normalized
             };
 
-            if (Enum.TryParse<TaskStatus>(normalized, true, out var status))
+            if (Enum.TryParse<DAL.Models.TaskStatus>(normalized, true, out var status))
             {
                 return status;
             }
@@ -44,7 +44,7 @@ namespace BLL.Services.Helpers
         /// Enforce forward-only transitions. Throws <see cref="System.Exception"/> with the
         /// standardized message when a backwards transition is attempted.
         /// </summary>
-        public static void ValidateForwardTransition(TaskStatus current, TaskStatus next)
+        public static void ValidateForwardTransition(DAL.Models.TaskStatus current, DAL.Models.TaskStatus next)
         {
             if ((int)next < (int)current)
             {
