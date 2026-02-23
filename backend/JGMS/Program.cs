@@ -29,23 +29,23 @@ public class Program
 			options.CustomSchemaIds(type => type.FullName);
 		});
 
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<DAL.Models.TaskStatus>("task_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<PriorityLevel>("priority_level");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<RequirementType>("requirement_type");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<JiraPriority>("jira_priority");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<DocumentStatus>("document_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<ProjectStatus>("project_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<SyncStatus>("sync_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<ReportType>("report_type");
-
 		// Configure Npgsql to handle DateTime correctly
 		AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 		builder.Services.AddDbContext<JgmsContext>(options =>
 	        options.UseNpgsql(
-		    builder.Configuration.GetConnectionString("DefaultConnection")
+		    builder.Configuration.GetConnectionString("DefaultConnection"),
+		    npgsqlOptions => npgsqlOptions
+		        .MapEnum<UserRole>("user_role")
+		        .MapEnum<UserStatus>("user_status")
+		        .MapEnum<DAL.Models.TaskStatus>("task_status")
+		        .MapEnum<PriorityLevel>("priority_level")
+		        .MapEnum<RequirementType>("requirement_type")
+		        .MapEnum<JiraPriority>("jira_priority")
+		        .MapEnum<DocumentStatus>("document_status")
+		        .MapEnum<ProjectStatus>("project_status")
+		        .MapEnum<SyncStatus>("sync_status")
+		        .MapEnum<ReportType>("report_type")
 	    ));
 
 		// Register repositories
@@ -82,6 +82,13 @@ public class Program
         app.UseHttpsRedirection();
         app.UseAuthorization();
         app.MapControllers();
+
+        // Initialize database
+        using (var scope = app.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<JgmsContext>();
+            dbContext.Database.EnsureCreated();
+        }
 
         app.Run();
     }

@@ -324,6 +324,21 @@ namespace BLL.Services
             };
         }
 
+        public async Task<TaskStatisticsByStatusDTO> GetTaskStatisticsByStatusAsync(int userId)
+        {
+            var todoCount = await _taskRepository.CountTasksByStatusAsync(userId, "todo");
+            var inProgressCount = await _taskRepository.CountTasksByStatusAsync(userId, "in_progress");
+            var doneCount = await _taskRepository.CountTasksByStatusAsync(userId, "done");
+
+            return new TaskStatisticsByStatusDTO
+            {
+                TodoTasks = todoCount,
+                InProgressTasks = inProgressCount,
+                DoneTasks = doneCount,
+                TotalTasks = todoCount + inProgressCount + doneCount
+            };
+        }
+
         #endregion
     }
 }
