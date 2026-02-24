@@ -8,7 +8,9 @@ namespace DAL.Repositories.Interface
         System.Threading.Tasks.Task<DAL.Models.Task?> GetByIdAsync(int taskId);
         System.Threading.Tasks.Task AddAsync(DAL.Models.Task task);
         System.Threading.Tasks.Task UpdateAsync(DAL.Models.Task task);
+        System.Threading.Tasks.Task DeleteAsync(int taskId);
         System.Threading.Tasks.Task<List<DAL.Models.Task>> GetTasksByProjectIdAsync(int projectId);
+        System.Threading.Tasks.Task<List<DAL.Models.Task>> GetTasksByRequirementIdAsync(int requirementId);
         System.Threading.Tasks.Task<List<DAL.Models.Task>> GetOverdueTasksByUserIdAsync(int userId);
         System.Threading.Tasks.Task<int> CountTasksByStatusAsync(int userId, string status);
         System.Threading.Tasks.Task<DAL.Models.Task?> GetByJiraIssueIdAsync(int jiraIssueId);

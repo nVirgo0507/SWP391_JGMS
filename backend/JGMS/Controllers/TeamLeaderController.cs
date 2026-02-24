@@ -162,6 +162,7 @@ namespace SWP391_JGMS.Controllers
 
         #region Tasks Management
 
+        /// <summary>Get all tasks for the leader's group project.</summary>
         [HttpGet("groups/{groupId}/tasks")]
         [ProducesResponseType(typeof(List<TaskResponseDTO>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetGroupTasks(int groupId)
@@ -175,6 +176,11 @@ namespace SWP391_JGMS.Controllers
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
+        /// <summary>
+        /// Create a task, assign a member, set deadline and optionally add to a Jira sprint.
+        /// If jiraIssueId is provided the task is linked to that Jira issue and changes are synced.
+        /// If sprintId is also provided the linked Jira issue is moved into that sprint.
+        /// </summary>
         [HttpPost("groups/{groupId}/tasks")]
         [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status201Created)]
         public async Task<IActionResult> CreateTask(int groupId, [FromBody] CreateTaskDTO dto)
@@ -182,16 +188,15 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var task = await _teamLeaderService.CreateTaskAsync(GetCurrentUserId(), groupId, dto);
-                return CreatedAtAction(nameof(GetGroupTasks), task);
+                return CreatedAtAction(nameof(GetGroupTasks), new { groupId }, task);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-055: Create a task pre-populated from a synced Jira issue key (e.g. "SWP391-5").
+        /// Create a task pre-populated from a synced Jira issue key (e.g. "SWP391-5").
         /// Title, description, and priority are auto-filled from the Jira issue.
-        /// Requires Jira integration configured and synced first.
         /// </summary>
         [HttpPost("groups/{groupId}/tasks/from-jira")]
         [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status201Created)]
@@ -200,12 +205,17 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var task = await _teamLeaderService.CreateTaskFromJiraIssueAsync(GetCurrentUserId(), groupId, dto);
-                return CreatedAtAction(nameof(GetGroupTasks), task);
+                return CreatedAtAction(nameof(GetGroupTasks), new { groupId }, task);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
+        /// <summary>
+        /// Edit a task: update status, assignee, description, priority, due date, or linked requirement.
+        /// Changes are synced back to Jira if the task is linked to a Jira issue.
+        /// Status changes trigger a Jira workflow transition automatically.
+        /// </summary>
         [HttpPut("groups/{groupId}/tasks/{taskId}")]
         [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
         public async Task<IActionResult> UpdateTask(int groupId, int taskId, [FromBody] UpdateTaskDTO dto)
@@ -219,6 +229,7 @@ namespace SWP391_JGMS.Controllers
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
+        /// <summary>Assign a task to a group member.</summary>
         [HttpPost("groups/{groupId}/tasks/{taskId}/assign")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> AssignTask(int groupId, int taskId, [FromBody] AssignTaskDTO dto)
@@ -227,6 +238,78 @@ namespace SWP391_JGMS.Controllers
             {
                 await _teamLeaderService.AssignTaskAsync(GetCurrentUserId(), groupId, taskId, dto.MemberId);
                 return Ok(new { message = "Task assigned successfully" });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Delete a task. Also removes the linked Jira issue from Jira if integration is configured.
+        /// </summary>
+        [HttpDelete("groups/{groupId}/tasks/{taskId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> DeleteTask(int groupId, int taskId)
+        {
+            try
+            {
+                await _teamLeaderService.DeleteTaskAsync(GetCurrentUserId(), groupId, taskId);
+                return Ok(new { message = "Task deleted successfully" });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Move a task's linked Jira issue to a different sprint.
+        /// Use sprintId = 0 to move the issue back to the backlog.
+        /// Requires the task to be linked to a Jira issue and Jira integration to be configured.
+        /// </summary>
+        [HttpPut("groups/{groupId}/tasks/{taskId}/sprint")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> MoveTaskToSprint(int groupId, int taskId, [FromBody] MoveTaskToSprintDTO dto)
+        {
+            try
+            {
+                var task = await _teamLeaderService.MoveTaskToSprintAsync(GetCurrentUserId(), groupId, taskId, dto.SprintId);
+                return Ok(task);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Link a task to a requirement. Creates a "Relates" issue link in Jira if both sides
+        /// have linked Jira issues and integration is configured.
+        /// </summary>
+        [HttpPut("groups/{groupId}/tasks/{taskId}/link-requirement")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> LinkTaskToRequirement(int groupId, int taskId, [FromBody] LinkTaskToRequirementDTO dto)
+        {
+            try
+            {
+                var task = await _teamLeaderService.LinkTaskToRequirementAsync(GetCurrentUserId(), groupId, taskId, dto.RequirementId);
+                return Ok(task);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Push all local changes (tasks + requirements) to Jira in bulk.
+        /// Syncs title, description, status, priority, and assignee for every
+        /// item that has a linked Jira issue.
+        /// Returns a summary: how many synced, how many failed, errors and warnings.
+        /// </summary>
+        [HttpPost("groups/{groupId}/sync-to-jira")]
+        [ProducesResponseType(typeof(BLL.DTOs.Jira.JiraPushSyncResultDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> SyncToJira(int groupId)
+        {
+            try
+            {
+                var result = await _teamLeaderService.SyncToJiraAsync(GetCurrentUserId(), groupId);
+                return Ok(result);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
