@@ -47,6 +47,12 @@ namespace BLL.Services.Interface
         /// </summary>
         Task DeleteRequirementAsync(int userId, int groupId, int requirementId);
 
+        /// <summary>
+        /// BR-055: Reorder/organise requirements hierarchy (Epic → Story → Task)
+        /// Returns the requirements in the requested order
+        /// </summary>
+        Task<List<RequirementResponseDTO>> ReorderRequirementsAsync(int userId, int groupId, ReorderRequirementsDTO dto);
+
         #endregion
 
         #region Tasks Management
@@ -62,6 +68,13 @@ namespace BLL.Services.Interface
         /// Validates that user is leader of the group
         /// </summary>
         Task<TaskResponseDTO> CreateTaskAsync(int userId, int groupId, CreateTaskDTO dto);
+
+        /// <summary>
+        /// BR-055: Create a task pre-populated from a synced Jira issue key (e.g. "SWP391-5").
+        /// Validates that user is leader of the group and that the issue belongs to the group's project.
+        /// Prevents duplicate tasks from being created for the same Jira issue.
+        /// </summary>
+        Task<TaskResponseDTO> CreateTaskFromJiraIssueAsync(int userId, int groupId, CreateTaskFromJiraIssueDTO dto);
 
         /// <summary>
         /// BR-055: Update a task for the leader's group

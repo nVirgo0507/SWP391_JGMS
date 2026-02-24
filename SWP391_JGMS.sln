@@ -31,6 +31,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{12345678-90AB-CDEF-1234-567890ABCDEF}"
 	ProjectSection(SolutionItems) = preProject
 		database\scripts\.gitkeep = database\scripts\.gitkeep
+		database\scripts\check_and_fix_leader.sql = database\scripts\check_and_fix_leader.sql
+		database\scripts\diag.sql = database\scripts\diag.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{ABCDEF01-2345-6789-ABCD-EF0123456789}"
