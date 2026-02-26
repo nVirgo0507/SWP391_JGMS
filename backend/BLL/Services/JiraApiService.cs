@@ -139,34 +139,38 @@ namespace BLL.Services
         {
             var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
 
-            var payload = new
+            // Build fields conditionally — never send null values to Jira
+            var fields = new Dictionary<string, object>
             {
-                fields = new
-                {
-                    project = new { key = dto.ProjectKey },
-                    summary = dto.Summary,
-                    description = new
-                    {
-                        type = "doc",
-                        version = 1,
-                        content = new[]
-                        {
-                            new
-                            {
-                                type = "paragraph",
-                                content = new[]
-                                {
-                                    new { type = "text", text = dto.Description ?? "" }
-                                }
-                            }
-                        }
-                    },
-                    issuetype = new { name = dto.IssueType },
-                    priority = dto.Priority != null ? new { name = dto.Priority } : null,
-                    assignee = dto.AssigneeAccountId != null ? new { accountId = dto.AssigneeAccountId } : null
-                }
+                ["project"] = new { key = dto.ProjectKey },
+                ["summary"] = dto.Summary,
+                ["issuetype"] = new { name = dto.IssueType }
             };
 
+            if (!string.IsNullOrEmpty(dto.Description))
+            {
+                fields["description"] = new
+                {
+                    type = "doc",
+                    version = 1,
+                    content = new[]
+                    {
+                        new
+                        {
+                            type = "paragraph",
+                            content = new[] { new { type = "text", text = dto.Description } }
+                        }
+                    }
+                };
+            }
+
+            if (!string.IsNullOrEmpty(dto.Priority))
+                fields["priority"] = new { name = dto.Priority };
+
+            if (!string.IsNullOrEmpty(dto.AssigneeAccountId))
+                fields["assignee"] = new { accountId = dto.AssigneeAccountId };
+
+            var payload = new { fields };
             var json = JsonSerializer.Serialize(payload, _jsonOptions);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -182,7 +186,6 @@ namespace BLL.Services
             var jsonDoc = JsonDocument.Parse(responseContent);
             var issueKey = jsonDoc.RootElement.GetProperty("key").GetString() ?? "";
 
-            // Get the created issue to return full details
             return await GetIssueAsync(jiraUrl, email, apiToken, issueKey);
         }
 
@@ -386,6 +389,68 @@ namespace BLL.Services
             }
 
             return "";
+        }
+
+        public async Task MoveIssueToSprintAsync(string jiraUrl, string email, string apiToken, string issueKey, int sprintId)
+        {
+            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
+            var payload = new { issues = new[] { issueKey } };
+            var json = JsonSerializer.Serialize(payload, _jsonOptions);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            // Jira Software Agile API
+            var response = await client.PostAsync($"/rest/agile/1.0/sprint/{sprintId}/issue", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to move issue to sprint: {response.StatusCode} - {error}");
+            }
+        }
+
+        public async Task MoveIssueToBacklogAsync(string jiraUrl, string email, string apiToken, string issueKey)
+        {
+            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
+            var payload = new { issues = new[] { issueKey } };
+            var json = JsonSerializer.Serialize(payload, _jsonOptions);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync("/rest/agile/1.0/backlog/issue", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to move issue to backlog: {response.StatusCode} - {error}");
+            }
+        }
+
+        public async Task CreateIssueLinkAsync(string jiraUrl, string email, string apiToken, string fromIssueKey, string toIssueKey, string linkType = "Relates")
+        {
+            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
+            var payload = new
+            {
+                type = new { name = linkType },
+                inwardIssue = new { key = fromIssueKey },
+                outwardIssue = new { key = toIssueKey }
+            };
+            var json = JsonSerializer.Serialize(payload, _jsonOptions);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync("/rest/api/3/issueLink", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to create issue link: {response.StatusCode} - {error}");
+            }
+        }
+
+        public async Task DeleteIssueAsync(string jiraUrl, string email, string apiToken, string issueKey)
+        {
+            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
+            var response = await client.DeleteAsync($"/rest/api/3/issue/{issueKey}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to delete Jira issue: {response.StatusCode} - {error}");
+            }
         }
     }
 }

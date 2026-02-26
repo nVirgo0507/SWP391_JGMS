@@ -125,6 +125,7 @@ public class Program
 		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 		builder.Services.AddScoped<IJiraIntegrationRepository, JiraIntegrationRepository>();
 		builder.Services.AddScoped<IJiraIssueRepository, JiraIssueRepository>();
+		builder.Services.AddScoped<IRequirementRepository, RequirementRepository>();
 
 		// Register HttpClient for Jira API
 		builder.Services.AddHttpClient();
