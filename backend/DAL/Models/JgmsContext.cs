@@ -592,6 +592,11 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
                 .HasColumnName("title");
+            entity.Property(e => e.RequirementType)
+                .HasColumnName("requirement_type");
+            entity.Property(e => e.Priority)
+                .HasDefaultValue(PriorityLevel.medium)
+                .HasColumnName("priority");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")

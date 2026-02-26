@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Jira;
+﻿﻿using BLL.DTOs.Jira;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -55,6 +55,26 @@ namespace BLL.Services.Interface
         /// Search for user by email or account ID
         /// </summary>
         Task<string?> SearchUserAsync(string jiraUrl, string email, string apiToken, string searchTerm);
+
+        /// <summary>
+        /// Move a Jira issue into a sprint (Jira Software Agile API)
+        /// </summary>
+        Task MoveIssueToSprintAsync(string jiraUrl, string email, string apiToken, string issueKey, int sprintId);
+
+        /// <summary>
+        /// Remove a Jira issue from its current sprint (move to backlog)
+        /// </summary>
+        Task MoveIssueToBacklogAsync(string jiraUrl, string email, string apiToken, string issueKey);
+
+        /// <summary>
+        /// Create a Jira issue link (e.g. "is related to", "blocks")
+        /// </summary>
+        Task CreateIssueLinkAsync(string jiraUrl, string email, string apiToken, string fromIssueKey, string toIssueKey, string linkType = "Relates");
+
+        /// <summary>
+        /// Delete a Jira issue by key
+        /// </summary>
+        Task DeleteIssueAsync(string jiraUrl, string email, string apiToken, string issueKey);
     }
 }
 

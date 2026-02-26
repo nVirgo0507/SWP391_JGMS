@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿﻿using System.ComponentModel.DataAnnotations;
 
 namespace BLL.DTOs.Jira
 {
@@ -51,6 +51,20 @@ namespace BLL.DTOs.Jira
         public string? JiraProjectName { get; set; }
         public string? JiraProjectKey { get; set; }
         public DateTime TestedAt { get; set; }
+    }
+
+    /// <summary>
+    /// Result of a push-sync from local DB to Jira
+    /// </summary>
+    public class JiraPushSyncResultDTO
+    {
+        public int TasksSynced { get; set; }
+        public int TasksFailed { get; set; }
+        public int RequirementsSynced { get; set; }
+        public int RequirementsFailed { get; set; }
+        public DateTime SyncTime { get; set; } = DateTime.UtcNow;
+        public List<string> Errors { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
     }
 }
 

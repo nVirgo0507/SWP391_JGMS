@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -38,6 +38,43 @@ namespace DAL.Repositories
             task.UpdatedAt = DateTime.UtcNow;
             _context.Tasks.Update(task);
             await _context.SaveChangesAsync();
+        }
+
+        public async System.Threading.Tasks.Task AddAsync(DAL.Models.Task task)
+        {
+            task.CreatedAt = DateTime.UtcNow;
+            task.UpdatedAt = DateTime.UtcNow;
+            await _context.Tasks.AddAsync(task);
+            await _context.SaveChangesAsync();
+        }
+
+        public async System.Threading.Tasks.Task<DAL.Models.Task?> GetByJiraIssueIdAsync(int jiraIssueId)
+        {
+            return await _context.Tasks
+                .Include(t => t.AssignedToNavigation)
+                .Include(t => t.JiraIssue)
+                .Include(t => t.Requirement)
+                .FirstOrDefaultAsync(t => t.JiraIssueId == jiraIssueId);
+        }
+
+        public async System.Threading.Tasks.Task<List<DAL.Models.Task>> GetTasksByRequirementIdAsync(int requirementId)
+        {
+            return await _context.Tasks
+                .Include(t => t.AssignedToNavigation)
+                .Include(t => t.JiraIssue)
+                .Include(t => t.Requirement)
+                .Where(t => t.RequirementId == requirementId)
+                .ToListAsync();
+        }
+
+        public async System.Threading.Tasks.Task DeleteAsync(int taskId)
+        {
+            var task = await GetByIdAsync(taskId);
+            if (task != null)
+            {
+                _context.Tasks.Remove(task);
+                await _context.SaveChangesAsync();
+            }
         }
 
         public async System.Threading.Tasks.Task<List<DAL.Models.Task>> GetTasksByProjectIdAsync(int projectId)

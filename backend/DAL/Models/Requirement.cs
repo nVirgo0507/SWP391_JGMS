@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -19,6 +19,10 @@ public partial class Requirement
     public string Title { get; set; } = null!;
 
     public string? Description { get; set; }
+
+    public RequirementType RequirementType { get; set; }
+
+    public PriorityLevel Priority { get; set; }
 
     public int CreatedBy { get; set; }
 
