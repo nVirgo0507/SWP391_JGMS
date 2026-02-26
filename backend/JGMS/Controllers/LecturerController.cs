@@ -1,5 +1,6 @@
 using BLL.DTOs.Admin;
 using BLL.Services.Interface;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace SWP391_JGMS.Controllers
@@ -9,6 +10,7 @@ namespace SWP391_JGMS.Controllers
     /// BR-054: Lecturer Group-Scoped Access - Lecturers can only access groups assigned to them
     /// </summary>
     [ApiController]
+    [Authorize(Roles = "lecturer")]
     [Route("api/[controller]")]
     [Produces("application/json")]
     public class LecturerController : ControllerBase

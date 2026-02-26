@@ -27,6 +27,6 @@ namespace BLL.Services.Interface
 		/// Authenticates user with email and password
 		/// Returns user object if credentials are valid, null otherwise
 		/// </summary>
-		Task<User?> LoginAsync(LoginDTO dto);
+		Task<string?> LoginAsync(LoginDTO dto);
 	}
 }

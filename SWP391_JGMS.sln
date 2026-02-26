@@ -9,8 +9,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BLL", "backend\BLL\BLL.cspr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DAL", "backend\DAL\DAL.csproj", "{22222222-2222-2222-2222-222222222222}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "frontend", "frontend\frontend.csproj", "{56031FA2-2499-4503-87BD-009018C2DA29}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{226D526E-3D78-4C2E-ACFE-C88C7F418A86}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
@@ -22,6 +20,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{A1B2C3D4-E5F6-7890-1234-567890ABCDEF}"
 	ProjectSection(SolutionItems) = preProject
 		docs\placeholder.txt = docs\placeholder.txt
+		docs\jira-integration-testing-guide.md = docs\jira-integration-testing-guide.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{FEDCBA09-8765-4321-0987-6543210FEDCB}"
@@ -32,6 +31,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{12345678-90AB-CDEF-1234-567890ABCDEF}"
 	ProjectSection(SolutionItems) = preProject
 		database\scripts\.gitkeep = database\scripts\.gitkeep
+		database\scripts\check_and_fix_leader.sql = database\scripts\check_and_fix_leader.sql
+		database\scripts\diag.sql = database\scripts\diag.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{ABCDEF01-2345-6789-ABCD-EF0123456789}"
@@ -57,10 +58,6 @@ Global
 		{22222222-2222-2222-2222-222222222222}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{22222222-2222-2222-2222-222222222222}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{22222222-2222-2222-2222-222222222222}.Release|Any CPU.Build.0 = Release|Any CPU
-		{56031FA2-2499-4503-87BD-009018C2DA29}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{56031FA2-2499-4503-87BD-009018C2DA29}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{56031FA2-2499-4503-87BD-009018C2DA29}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{56031FA2-2499-4503-87BD-009018C2DA29}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

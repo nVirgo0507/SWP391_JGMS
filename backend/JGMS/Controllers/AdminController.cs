@@ -1,5 +1,6 @@
 ﻿﻿using BLL.DTOs.Admin;
 using BLL.Services.Interface;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace SWP391_JGMS.Controllers
@@ -13,7 +14,8 @@ namespace SWP391_JGMS.Controllers
     /// See: https://learn.microsoft.com/en-us/aspnet/core/security/authentication/
     /// </summary>
     [ApiController]
-    [Route("api/admin")]
+	[Authorize(Roles = "admin")]
+	[Route("api/admin")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;

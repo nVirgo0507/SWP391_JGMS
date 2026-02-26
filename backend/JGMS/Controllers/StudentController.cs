@@ -1,5 +1,6 @@
 ﻿using BLL.DTOs.Student;
 using BLL.Services.Interface;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.IO;
 
@@ -18,7 +19,8 @@ namespace SWP391_JGMS.Controllers
     /// authentication once JWT is implemented. Use [Authorize] attribute.
     /// </summary>
     [ApiController]
-    [Route("api/student")]
+    [Authorize(Roles = "student")]
+	[Route("api/student")]
     public class StudentController : ControllerBase
     {
         private readonly IStudentService _studentService;

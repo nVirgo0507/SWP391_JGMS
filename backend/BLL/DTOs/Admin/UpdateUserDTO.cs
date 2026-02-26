@@ -1,4 +1,4 @@
-﻿﻿using DAL.Models;
+﻿﻿﻿using DAL.Models;
 using System.ComponentModel.DataAnnotations;
 
 namespace BLL.DTOs.Admin
@@ -26,7 +26,7 @@ namespace BLL.DTOs.Admin
 
         public string? JiraAccountId { get; set; }
 
-        // Lecturer-specific fields
+        // Phone is required for all roles (but optional in updates)
         public string? Phone { get; set; }
 
         public UserStatus? Status { get; set; }
