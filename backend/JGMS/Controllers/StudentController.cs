@@ -154,6 +154,25 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Get task statistics grouped by status
+        /// Shows count of tasks in each status: todo, in_progress, done
+        /// </summary>
+        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
+        [HttpGet("task-statistics-by-status")]
+        public async Task<IActionResult> GetTaskStatisticsByStatus([FromQuery] int userId)
+        {
+            try
+            {
+                var statistics = await _studentService.GetTaskStatisticsByStatusAsync(userId);
+                return Ok(statistics);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get personal commit history
         /// Fetches commits from GitHub with timeline and contribution details
         /// </summary>

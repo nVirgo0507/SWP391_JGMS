@@ -111,7 +111,18 @@ public class Program
 
 		builder.Services.AddDbContext<JgmsContext>(options =>
 	        options.UseNpgsql(
-		    builder.Configuration.GetConnectionString("DefaultConnection")
+		    builder.Configuration.GetConnectionString("DefaultConnection"),
+		    npgsqlOptions => npgsqlOptions
+		        .MapEnum<UserRole>("user_role")
+		        .MapEnum<UserStatus>("user_status")
+		        .MapEnum<DAL.Models.TaskStatus>("task_status")
+		        .MapEnum<PriorityLevel>("priority_level")
+		        .MapEnum<RequirementType>("requirement_type")
+		        .MapEnum<JiraPriority>("jira_priority")
+		        .MapEnum<DocumentStatus>("document_status")
+		        .MapEnum<ProjectStatus>("project_status")
+		        .MapEnum<SyncStatus>("sync_status")
+		        .MapEnum<ReportType>("report_type")
 	    ));
 
 		// Register repositories
@@ -168,6 +179,13 @@ public class Program
 		app.UseAuthentication();
 		app.UseAuthorization();
         app.MapControllers();
+
+        // Initialize database
+        using (var scope = app.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<JgmsContext>();
+            dbContext.Database.EnsureCreated();
+        }
 
         app.Run();
     }

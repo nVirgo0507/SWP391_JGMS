@@ -15,6 +15,7 @@ namespace BLL.Services.Interface
         
         // View Personal Statistics
         System.Threading.Tasks.Task<PersonalStatisticsDTO> GetPersonalStatisticsAsync(int userId, int? projectId = null);
+        System.Threading.Tasks.Task<TaskStatisticsByStatusDTO> GetTaskStatisticsByStatusAsync(int userId);
         System.Threading.Tasks.Task<List<CommitHistoryDTO>> GetCommitHistoryAsync(int userId, int? projectId = null);
         
         // Profile Management
