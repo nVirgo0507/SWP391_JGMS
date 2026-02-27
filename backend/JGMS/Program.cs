@@ -29,10 +29,22 @@ public class Program
         {
             options.AddPolicy("AllowFrontend", policy =>
             {
-                policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "http://localhost:4200")
-                      .AllowAnyHeader()
-                      .AllowAnyMethod()
-                      .AllowCredentials();
+                var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
+                if (allowedOrigins != null && allowedOrigins.Length > 0)
+                {
+                    policy.WithOrigins(allowedOrigins)
+                          .AllowAnyHeader()
+                          .AllowAnyMethod()
+                          .AllowCredentials();
+                }
+                else
+                {
+                    // Default: allow common dev ports + any origin for staging
+                    policy.SetIsOriginAllowed(_ => true)
+                          .AllowAnyHeader()
+                          .AllowAnyMethod()
+                          .AllowCredentials();
+                }
             });
         });
 
@@ -49,8 +61,17 @@ public class Program
 			c.SwaggerDoc("v1", new OpenApiInfo
 			{
 				Title = "SWP391 JGMS API",
-				Version = "v1"
+				Version = "v1",
+				Description = "Jira & GitHub Management System — API for frontend integration.\n\n" +
+					"**Auth flow:** POST `/api/auth/login` → get `accessToken` → " +
+					"click 'Authorize' button above → paste token."
 			});
+
+			// Include XML comments for endpoint descriptions
+			var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+			var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+			if (File.Exists(xmlPath))
+				c.IncludeXmlComments(xmlPath);
 
 			c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
 			{
@@ -181,14 +202,18 @@ public class Program
 			DbInitializer.SeedAdmin(context);
 		}
 
-		// Configure the HTTP request pipeline.
-		if (app.Environment.IsDevelopment())
-        {
-            app.UseSwagger();
-            app.UseSwaggerUI();
-        }
+		// Swagger — available in all environments for team access
+		app.UseSwagger();
+		app.UseSwaggerUI(c =>
+		{
+			c.SwaggerEndpoint("/swagger/v1/swagger.json", "SWP391 JGMS API v1");
+			c.RoutePrefix = "swagger";
+		});
 
-        app.UseHttpsRedirection();
+		if (!app.Environment.IsDevelopment())
+		{
+			app.UseHttpsRedirection();
+		}
 		app.UseCors("AllowFrontend");
 		app.UseAuthentication();
 		app.UseAuthorization();
