@@ -319,13 +319,33 @@ namespace SWP391_JGMS.Controllers
 
         #region SRS Document Management
 
+        /// <summary>
+        /// Get all SRS documents for the leader's group project.
+        /// </summary>
         [HttpGet("groups/{groupId}/srs")]
-        [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetGroupSrsDocument(int groupId)
+        [ProducesResponseType(typeof(List<SrsDocumentResponseDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetGroupSrsDocuments(int groupId)
         {
             try
             {
-                var srs = await _teamLeaderService.GetGroupSrsDocumentAsync(GetCurrentUserId(), groupId);
+                var documents = await _teamLeaderService.GetGroupSrsDocumentsAsync(GetCurrentUserId(), groupId);
+                return Ok(documents);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get a single SRS document by ID with all included requirements.
+        /// </summary>
+        [HttpGet("groups/{groupId}/srs/{documentId}")]
+        [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGroupSrsDocument(int groupId, int documentId)
+        {
+            try
+            {
+                var srs = await _teamLeaderService.GetGroupSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
                 if (srs == null)
                     return NotFound(new { message = "SRS document not found" });
                 return Ok(srs);
@@ -334,27 +354,57 @@ namespace SWP391_JGMS.Controllers
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
-        [HttpPost("groups/{groupId}/srs")]
+        /// <summary>
+        /// Generate an SRS document from existing requirements.
+        /// Snapshots all (or selected) requirements into a new SRS version.
+        /// Pass requirementIds to include specific requirements, or omit to include all.
+        /// </summary>
+        [HttpPost("groups/{groupId}/srs/generate")]
         [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status201Created)]
-        public async Task<IActionResult> CreateSrsDocument(int groupId, [FromBody] CreateSrsDocumentDTO dto)
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> GenerateSrsDocument(int groupId, [FromBody] CreateSrsDocumentDTO dto)
         {
             try
             {
-                var srs = await _teamLeaderService.CreateSrsDocumentAsync(GetCurrentUserId(), groupId, dto);
-                return CreatedAtAction(nameof(GetGroupSrsDocument), srs);
+                var srs = await _teamLeaderService.GenerateSrsDocumentAsync(GetCurrentUserId(), groupId, dto);
+                return CreatedAtAction(nameof(GetGroupSrsDocument), new { groupId, documentId = srs.DocumentId }, srs);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
-        [HttpPut("groups/{groupId}/srs/{srsId}")]
+        /// <summary>
+        /// Update SRS document metadata (title, version, introduction, scope, status).
+        /// Set status to "published" to finalize the document.
+        /// </summary>
+        [HttpPut("groups/{groupId}/srs/{documentId}")]
         [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
-        public async Task<IActionResult> UpdateSrsDocument(int groupId, int srsId, [FromBody] UpdateSrsDocumentDTO dto)
+        public async Task<IActionResult> UpdateSrsDocument(int groupId, int documentId, [FromBody] UpdateSrsDocumentDTO dto)
         {
             try
             {
-                var srs = await _teamLeaderService.UpdateSrsDocumentAsync(GetCurrentUserId(), groupId, srsId, dto);
+                var srs = await _teamLeaderService.UpdateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
                 return Ok(srs);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Download the SRS document as an HTML file.
+        /// The file is formatted with a proper SRS structure including table of contents,
+        /// introduction, scope, functional/non-functional requirements, and a summary table.
+        /// </summary>
+        [HttpGet("groups/{groupId}/srs/{documentId}/download")]
+        [Produces("text/html")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DownloadSrsDocument(int groupId, int documentId)
+        {
+            try
+            {
+                var (content, fileName) = await _teamLeaderService.DownloadSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
+                return File(content, "text/html", fileName);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }

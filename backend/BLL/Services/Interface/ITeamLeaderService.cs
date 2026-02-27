@@ -107,22 +107,30 @@ namespace BLL.Services.Interface
         #region SRS Document Management
 
         /// <summary>
-        /// BR-055: Get SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Get all SRS documents for the leader's group project
         /// </summary>
-        Task<SrsDocumentResponseDTO?> GetGroupSrsDocumentAsync(int userId, int groupId);
+        Task<List<SrsDocumentResponseDTO>> GetGroupSrsDocumentsAsync(int userId, int groupId);
 
         /// <summary>
-        /// BR-055: Create SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Get a single SRS document by ID
         /// </summary>
-        Task<SrsDocumentResponseDTO> CreateSrsDocumentAsync(int userId, int groupId, CreateSrsDocumentDTO dto);
+        Task<SrsDocumentResponseDTO?> GetGroupSrsDocumentAsync(int userId, int groupId, int documentId);
 
         /// <summary>
-        /// BR-055: Update SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Generate an SRS document from existing requirements.
+        /// Creates the header record and snapshots each requirement into SRS_INCLUDED_REQUIREMENT.
         /// </summary>
-        Task<SrsDocumentResponseDTO> UpdateSrsDocumentAsync(int userId, int groupId, int srsId, UpdateSrsDocumentDTO dto);
+        Task<SrsDocumentResponseDTO> GenerateSrsDocumentAsync(int userId, int groupId, CreateSrsDocumentDTO dto);
+
+        /// <summary>
+        /// Update SRS document metadata (title, version, intro, scope, status)
+        /// </summary>
+        Task<SrsDocumentResponseDTO> UpdateSrsDocumentAsync(int userId, int groupId, int documentId, UpdateSrsDocumentDTO dto);
+
+        /// <summary>
+        /// Generate a downloadable HTML file of the SRS document
+        /// </summary>
+        Task<(byte[] content, string fileName)> DownloadSrsDocumentAsync(int userId, int groupId, int documentId);
 
         #endregion
     }
