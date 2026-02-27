@@ -22,6 +22,8 @@ public partial class SrsDocument
 
     public string? FilePath { get; set; }
 
+    public DocumentStatus Status { get; set; } = DocumentStatus.draft;
+
     public int GeneratedBy { get; set; }
 
     public DateTime? GeneratedAt { get; set; }
