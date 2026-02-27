@@ -26,6 +26,7 @@ namespace BLL.Services
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
         private readonly IDataProtector _dataProtector;
+        private readonly ISrsDocumentRepository _srsDocumentRepository;
 
         public TeamLeaderService(
             IGroupMemberRepository memberRepository,
@@ -37,7 +38,8 @@ namespace BLL.Services
             IRequirementRepository requirementRepository,
             IJiraIntegrationRepository jiraIntegrationRepository,
             IJiraApiService jiraApiService,
-            IDataProtectionProvider dataProtectionProvider)
+            IDataProtectionProvider dataProtectionProvider,
+            ISrsDocumentRepository srsDocumentRepository)
         {
             _memberRepository = memberRepository;
             _groupRepository = groupRepository;
@@ -49,6 +51,7 @@ namespace BLL.Services
             _jiraIntegrationRepository = jiraIntegrationRepository;
             _jiraApiService = jiraApiService;
             _dataProtector = dataProtectionProvider.CreateProtector("JiraApiToken");
+            _srsDocumentRepository = srsDocumentRepository;
         }
 
         /// <summary>
@@ -1101,61 +1104,417 @@ namespace BLL.Services
             };
 
         /// <summary>
-        /// BR-055: Get SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Get all SRS documents for the leader's group project
         /// </summary>
-        public async Task<SrsDocumentResponseDTO?> GetGroupSrsDocumentAsync(int userId, int groupId)
+        public async Task<List<SrsDocumentResponseDTO>> GetGroupSrsDocumentsAsync(int userId, int groupId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
-            if (group == null)
-            {
-                throw new Exception("Group not found");
-            }
+            if (group == null) throw new Exception("Group not found");
 
-            // BR-055: Validate user is leader of the group
             await ValidateLeaderAccessAsync(userId, groupId);
 
-            // TODO: Get SRS document from repository
-            return null;
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) return new List<SrsDocumentResponseDTO>();
+
+            var documents = await _srsDocumentRepository.GetByProjectIdAsync(project.ProjectId);
+            return documents.Select(MapSrsToDTO).ToList();
         }
 
         /// <summary>
-        /// BR-055: Create SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Get a single SRS document by ID with included requirements
         /// </summary>
-        public async Task<SrsDocumentResponseDTO> CreateSrsDocumentAsync(int userId, int groupId, CreateSrsDocumentDTO dto)
+        public async Task<SrsDocumentResponseDTO?> GetGroupSrsDocumentAsync(int userId, int groupId, int documentId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
-            if (group == null)
-            {
-                throw new Exception("Group not found");
-            }
+            if (group == null) throw new Exception("Group not found");
 
-            // BR-055: Validate user is leader of the group
             await ValidateLeaderAccessAsync(userId, groupId);
 
-            // TODO: Create SRS document in repository
-            throw new NotImplementedException("SRS repository needed");
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) return null;
+
+            var doc = await _srsDocumentRepository.GetByIdAsync(documentId);
+            if (doc == null || doc.ProjectId != project.ProjectId) return null;
+
+            return MapSrsToDTO(doc);
         }
 
         /// <summary>
-        /// BR-055: Update SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Generate an SRS document from existing requirements.
+        /// If ImportFromJira is true, auto-creates requirements from synced Jira issues first.
+        /// Snapshots requirement data into SRS_INCLUDED_REQUIREMENT rows for traceability.
         /// </summary>
-        public async Task<SrsDocumentResponseDTO> UpdateSrsDocumentAsync(int userId, int groupId, int srsId, UpdateSrsDocumentDTO dto)
+        public async Task<SrsDocumentResponseDTO> GenerateSrsDocumentAsync(int userId, int groupId, CreateSrsDocumentDTO dto)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
-            if (group == null)
-            {
-                throw new Exception("Group not found");
-            }
+            if (group == null) throw new Exception("Group not found");
 
-            // BR-055: Validate user is leader of the group
             await ValidateLeaderAccessAsync(userId, groupId);
 
-            // TODO: Update SRS document in repository
-            throw new NotImplementedException("SRS repository needed");
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            // Auto-import requirements from synced Jira issues
+            if (dto.ImportFromJira)
+            {
+                var jiraIssues = await _jiraIssueRepository.GetByProjectIdAsync(project.ProjectId);
+                int imported = 0;
+
+                foreach (var issue in jiraIssues)
+                {
+                    // Skip if a requirement already exists for this Jira issue
+                    var existing = await _requirementRepository.GetByJiraIssueIdAsync(issue.JiraIssueId);
+                    if (existing != null) continue;
+
+                    // Map Jira issue type to requirement type
+                    var reqType = issue.IssueType?.ToLower() switch
+                    {
+                        "bug" or "improvement" or "enhancement" => RequirementType.non_functional,
+                        _ => RequirementType.functional
+                    };
+
+                    // Map Jira priority to internal priority
+                    var priority = issue.Priority switch
+                    {
+                        JiraPriority.highest or JiraPriority.high => PriorityLevel.high,
+                        JiraPriority.low or JiraPriority.lowest => PriorityLevel.low,
+                        _ => PriorityLevel.medium
+                    };
+
+                    var requirement = new Requirement
+                    {
+                        ProjectId = project.ProjectId,
+                        RequirementCode = issue.IssueKey,
+                        Title = issue.Summary,
+                        Description = issue.Description,
+                        JiraIssueId = issue.JiraIssueId,
+                        RequirementType = reqType,
+                        Priority = priority,
+                        CreatedBy = userId
+                    };
+
+                    await _requirementRepository.AddAsync(requirement);
+                    imported++;
+                }
+            }
+
+            // Get requirements to include
+            var allRequirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            if (!allRequirements.Any())
+                throw new Exception("No requirements found for this project. Sync Jira issues first (POST /api/jira/projects/{projectId}/sync) or create requirements manually.");
+
+            List<Requirement> selectedRequirements;
+            if (dto.RequirementIds != null && dto.RequirementIds.Any())
+            {
+                selectedRequirements = allRequirements
+                    .Where(r => dto.RequirementIds.Contains(r.RequirementId))
+                    .ToList();
+
+                if (!selectedRequirements.Any())
+                    throw new Exception("None of the specified requirement IDs belong to this project.");
+            }
+            else
+            {
+                selectedRequirements = allRequirements.ToList();
+            }
+
+            // Auto-generate introduction and scope if not provided
+            var introduction = dto.Introduction ?? 
+                $"This Software Requirements Specification (SRS) document describes the functional and non-functional requirements for the \"{project.ProjectName}\" project. " +
+                $"It is intended to serve as a reference for the development team and stakeholders.";
+
+            var scope = dto.Scope ??
+                $"This document covers all requirements for \"{project.ProjectName}\". " +
+                $"It includes {selectedRequirements.Count(r => r.RequirementType == RequirementType.functional)} functional requirement(s) " +
+                $"and {selectedRequirements.Count(r => r.RequirementType == RequirementType.non_functional)} non-functional requirement(s).";
+
+            // Create the SRS document header
+            var srsDocument = new SrsDocument
+            {
+                ProjectId = project.ProjectId,
+                Version = dto.Version,
+                DocumentTitle = dto.DocumentTitle,
+                Introduction = introduction,
+                Scope = scope,
+                Status = DocumentStatus.draft,
+                GeneratedBy = userId,
+                GeneratedAt = DateTime.UtcNow
+            };
+
+            await _srsDocumentRepository.AddAsync(srsDocument);
+
+            // Separate functional and non-functional requirements
+            var functional = selectedRequirements
+                .Where(r => r.RequirementType == RequirementType.functional)
+                .OrderBy(r => r.RequirementCode)
+                .ToList();
+
+            var nonFunctional = selectedRequirements
+                .Where(r => r.RequirementType == RequirementType.non_functional)
+                .OrderBy(r => r.RequirementCode)
+                .ToList();
+
+            // Snapshot each requirement into SRS_INCLUDED_REQUIREMENT
+            int sectionCounter = 1;
+            foreach (var req in functional)
+            {
+                srsDocument.SrsIncludedRequirements.Add(new SrsIncludedRequirement
+                {
+                    DocumentId = srsDocument.DocumentId,
+                    RequirementId = req.RequirementId,
+                    SectionNumber = $"3.1.{sectionCounter}",
+                    SnapshotTitle = req.Title,
+                    SnapshotDescription = req.Description
+                });
+                sectionCounter++;
+            }
+
+            sectionCounter = 1;
+            foreach (var req in nonFunctional)
+            {
+                srsDocument.SrsIncludedRequirements.Add(new SrsIncludedRequirement
+                {
+                    DocumentId = srsDocument.DocumentId,
+                    RequirementId = req.RequirementId,
+                    SectionNumber = $"3.2.{sectionCounter}",
+                    SnapshotTitle = req.Title,
+                    SnapshotDescription = req.Description
+                });
+                sectionCounter++;
+            }
+
+            await _srsDocumentRepository.UpdateAsync(srsDocument);
+
+            // Reload to get nav properties
+            var saved = await _srsDocumentRepository.GetByIdAsync(srsDocument.DocumentId);
+            return MapSrsToDTO(saved!);
         }
+
+        /// <summary>
+        /// Update SRS document metadata
+        /// </summary>
+        public async Task<SrsDocumentResponseDTO> UpdateSrsDocumentAsync(int userId, int groupId, int documentId, UpdateSrsDocumentDTO dto)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            var doc = await _srsDocumentRepository.GetByIdAsync(documentId);
+            if (doc == null) throw new Exception("SRS document not found");
+            if (doc.ProjectId != project.ProjectId)
+                throw new Exception("This SRS document does not belong to your group's project.");
+
+            if (dto.DocumentTitle != null) doc.DocumentTitle = dto.DocumentTitle;
+            if (dto.Version != null) doc.Version = dto.Version;
+            if (dto.Introduction != null) doc.Introduction = dto.Introduction;
+            if (dto.Scope != null) doc.Scope = dto.Scope;
+            if (dto.Status != null)
+            {
+                doc.Status = dto.Status.ToLower() switch
+                {
+                    "published" => DocumentStatus.published,
+                    _ => DocumentStatus.draft
+                };
+            }
+
+            await _srsDocumentRepository.UpdateAsync(doc);
+
+            var saved = await _srsDocumentRepository.GetByIdAsync(doc.DocumentId);
+            return MapSrsToDTO(saved!);
+        }
+
+        /// <summary>
+        /// Generate a downloadable HTML file of the SRS document
+        /// </summary>
+        public async Task<(byte[] content, string fileName)> DownloadSrsDocumentAsync(int userId, int groupId, int documentId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            var doc = await _srsDocumentRepository.GetByIdAsync(documentId);
+            if (doc == null) throw new Exception("SRS document not found");
+            if (doc.ProjectId != project.ProjectId)
+                throw new Exception("This SRS document does not belong to your group's project.");
+
+            var html = GenerateSrsHtml(doc, project);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(html);
+            var safeTitle = doc.DocumentTitle.Replace(" ", "_").Replace("/", "_");
+            var fileName = $"{safeTitle}_v{doc.Version}.html";
+
+            return (bytes, fileName);
+        }
+
+        // ── SRS Helpers ─────────────────────────────────────────────────────────
+
+        private static SrsDocumentResponseDTO MapSrsToDTO(SrsDocument doc) => new()
+        {
+            DocumentId = doc.DocumentId,
+            ProjectId = doc.ProjectId,
+            ProjectName = doc.Project?.ProjectName ?? "",
+            Version = doc.Version,
+            DocumentTitle = doc.DocumentTitle,
+            Introduction = doc.Introduction,
+            Scope = doc.Scope,
+            FilePath = doc.FilePath,
+            Status = doc.Status.ToString(),
+            GeneratedBy = doc.GeneratedBy,
+            GeneratedByName = doc.GeneratedByNavigation?.FullName,
+            GeneratedAt = doc.GeneratedAt,
+            CreatedAt = doc.CreatedAt,
+            UpdatedAt = doc.UpdatedAt,
+            Requirements = doc.SrsIncludedRequirements
+                .OrderBy(r => r.SectionNumber)
+                .Select(r => new SrsIncludedRequirementDTO
+                {
+                    RequirementId = r.RequirementId,
+                    SectionNumber = r.SectionNumber,
+                    RequirementCode = r.Requirement?.RequirementCode,
+                    Title = r.SnapshotTitle,
+                    Description = r.SnapshotDescription,
+                    RequirementType = r.Requirement?.RequirementType.ToString(),
+                    Priority = r.Requirement?.Priority.ToString()
+                }).ToList()
+        };
+
+        private static string GenerateSrsHtml(SrsDocument doc, Project project)
+        {
+            var functional = doc.SrsIncludedRequirements
+                .Where(r => r.SectionNumber != null && r.SectionNumber.StartsWith("3.1"))
+                .OrderBy(r => r.SectionNumber)
+                .ToList();
+
+            var nonFunctional = doc.SrsIncludedRequirements
+                .Where(r => r.SectionNumber != null && r.SectionNumber.StartsWith("3.2"))
+                .OrderBy(r => r.SectionNumber)
+                .ToList();
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("<!DOCTYPE html>");
+            sb.AppendLine("<html lang=\"en\"><head><meta charset=\"UTF-8\">");
+            sb.AppendLine($"<title>{Escape(doc.DocumentTitle)}</title>");
+            sb.AppendLine("<style>");
+            sb.AppendLine("body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; line-height: 1.6; }");
+            sb.AppendLine("h1 { text-align: center; border-bottom: 3px solid #2c3e50; padding-bottom: 10px; }");
+            sb.AppendLine("h2 { color: #2c3e50; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; margin-top: 30px; }");
+            sb.AppendLine("h3 { color: #34495e; }");
+            sb.AppendLine(".meta { text-align: center; color: #7f8c8d; margin-bottom: 30px; }");
+            sb.AppendLine("table { width: 100%; border-collapse: collapse; margin: 15px 0; }");
+            sb.AppendLine("th, td { border: 1px solid #bdc3c7; padding: 10px; text-align: left; }");
+            sb.AppendLine("th { background-color: #2c3e50; color: white; }");
+            sb.AppendLine("tr:nth-child(even) { background-color: #f2f2f2; }");
+            sb.AppendLine(".req-section { margin: 10px 0 20px 0; padding: 10px 15px; background: #f9f9f9; border-left: 4px solid #3498db; }");
+            sb.AppendLine(".priority-high { color: #e74c3c; font-weight: bold; }");
+            sb.AppendLine(".priority-medium { color: #f39c12; font-weight: bold; }");
+            sb.AppendLine(".priority-low { color: #27ae60; font-weight: bold; }");
+            sb.AppendLine("</style></head><body>");
+
+            // Title page
+            sb.AppendLine($"<h1>{Escape(doc.DocumentTitle)}</h1>");
+            sb.AppendLine($"<div class=\"meta\">");
+            sb.AppendLine($"<p><strong>Project:</strong> {Escape(project.ProjectName)}</p>");
+            sb.AppendLine($"<p><strong>Version:</strong> {Escape(doc.Version)} &nbsp;|&nbsp; <strong>Status:</strong> {doc.Status}</p>");
+            sb.AppendLine($"<p><strong>Generated by:</strong> {Escape(doc.GeneratedByNavigation?.FullName ?? "N/A")} &nbsp;|&nbsp; <strong>Date:</strong> {doc.GeneratedAt?.ToString("yyyy-MM-dd HH:mm") ?? "N/A"}</p>");
+            sb.AppendLine("</div>");
+
+            // Table of Contents
+            sb.AppendLine("<h2>Table of Contents</h2>");
+            sb.AppendLine("<ol>");
+            sb.AppendLine("<li>Introduction</li>");
+            sb.AppendLine("<li>Scope</li>");
+            sb.AppendLine("<li>Requirements");
+            sb.AppendLine("<ol><li>Functional Requirements</li><li>Non-Functional Requirements</li></ol>");
+            sb.AppendLine("</li>");
+            sb.AppendLine("<li>Requirements Summary</li>");
+            sb.AppendLine("</ol>");
+
+            // 1. Introduction
+            sb.AppendLine("<h2>1. Introduction</h2>");
+            sb.AppendLine($"<p>{Escape(doc.Introduction ?? "N/A")}</p>");
+
+            // 2. Scope
+            sb.AppendLine("<h2>2. Scope</h2>");
+            sb.AppendLine($"<p>{Escape(doc.Scope ?? "N/A")}</p>");
+
+            // 3. Requirements
+            sb.AppendLine("<h2>3. Requirements</h2>");
+
+            // 3.1 Functional
+            sb.AppendLine("<h3>3.1 Functional Requirements</h3>");
+            if (functional.Any())
+            {
+                foreach (var req in functional)
+                {
+                    var priorityClass = GetPriorityClass(req.Requirement?.Priority);
+                    sb.AppendLine($"<div class=\"req-section\">");
+                    sb.AppendLine($"<h4>{Escape(req.SectionNumber ?? "")} — {Escape(req.SnapshotTitle ?? "Untitled")} ({Escape(req.Requirement?.RequirementCode ?? "")})</h4>");
+                    sb.AppendLine($"<p><strong>Priority:</strong> <span class=\"{priorityClass}\">{req.Requirement?.Priority}</span></p>");
+                    sb.AppendLine($"<p>{Escape(req.SnapshotDescription ?? "No description provided.")}</p>");
+                    sb.AppendLine("</div>");
+                }
+            }
+            else
+            {
+                sb.AppendLine("<p><em>No functional requirements included.</em></p>");
+            }
+
+            // 3.2 Non-Functional
+            sb.AppendLine("<h3>3.2 Non-Functional Requirements</h3>");
+            if (nonFunctional.Any())
+            {
+                foreach (var req in nonFunctional)
+                {
+                    var priorityClass = GetPriorityClass(req.Requirement?.Priority);
+                    sb.AppendLine($"<div class=\"req-section\">");
+                    sb.AppendLine($"<h4>{Escape(req.SectionNumber ?? "")} — {Escape(req.SnapshotTitle ?? "Untitled")} ({Escape(req.Requirement?.RequirementCode ?? "")})</h4>");
+                    sb.AppendLine($"<p><strong>Priority:</strong> <span class=\"{priorityClass}\">{req.Requirement?.Priority}</span></p>");
+                    sb.AppendLine($"<p>{Escape(req.SnapshotDescription ?? "No description provided.")}</p>");
+                    sb.AppendLine("</div>");
+                }
+            }
+            else
+            {
+                sb.AppendLine("<p><em>No non-functional requirements included.</em></p>");
+            }
+
+            // 4. Summary table
+            sb.AppendLine("<h2>4. Requirements Summary</h2>");
+            sb.AppendLine("<table><thead><tr><th>Section</th><th>Code</th><th>Title</th><th>Type</th><th>Priority</th></tr></thead><tbody>");
+            foreach (var req in doc.SrsIncludedRequirements.OrderBy(r => r.SectionNumber))
+            {
+                sb.AppendLine($"<tr>");
+                sb.AppendLine($"<td>{Escape(req.SectionNumber ?? "")}</td>");
+                sb.AppendLine($"<td>{Escape(req.Requirement?.RequirementCode ?? "")}</td>");
+                sb.AppendLine($"<td>{Escape(req.SnapshotTitle ?? "")}</td>");
+                sb.AppendLine($"<td>{req.Requirement?.RequirementType}</td>");
+                sb.AppendLine($"<td>{req.Requirement?.Priority}</td>");
+                sb.AppendLine("</tr>");
+            }
+            sb.AppendLine("</tbody></table>");
+
+            sb.AppendLine("</body></html>");
+            return sb.ToString();
+        }
+
+        private static string Escape(string? text) =>
+            System.Net.WebUtility.HtmlEncode(text ?? "");
+
+        private static string GetPriorityClass(PriorityLevel? priority) =>
+            priority switch
+            {
+                PriorityLevel.high => "priority-high",
+                PriorityLevel.medium => "priority-medium",
+                PriorityLevel.low => "priority-low",
+                _ => ""
+            };
     }
 }
 

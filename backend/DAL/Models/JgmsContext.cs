@@ -645,6 +645,9 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Introduction).HasColumnName("introduction");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
             entity.Property(e => e.Scope).HasColumnName("scope");
+            entity.Property(e => e.Status)
+                .HasDefaultValue(DocumentStatus.draft)
+                .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
