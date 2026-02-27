@@ -13,7 +13,7 @@ namespace SWP391_JGMS.Controllers
     /// Validation: Check user is leader of the group via GROUP_MEMBER.is_leader
     /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/team-leader")]
     [Produces("application/json")]
     [Authorize]
     public class TeamLeaderController : ControllerBase
@@ -281,7 +281,7 @@ namespace SWP391_JGMS.Controllers
         /// Link a task to a requirement. Creates a "Relates" issue link in Jira if both sides
         /// have linked Jira issues and integration is configured.
         /// </summary>
-        [HttpPut("groups/{groupId}/tasks/{taskId}/link-requirement")]
+        [HttpPut("groups/{groupId}/tasks/{taskId}/requirement")]
         [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
         public async Task<IActionResult> LinkTaskToRequirement(int groupId, int taskId, [FromBody] LinkTaskToRequirementDTO dto)
         {
@@ -322,7 +322,7 @@ namespace SWP391_JGMS.Controllers
         /// <summary>
         /// Get all SRS documents for the leader's group project.
         /// </summary>
-        [HttpGet("groups/{groupId}/srs")]
+        [HttpGet("groups/{groupId}/srs-documents")]
         [ProducesResponseType(typeof(List<SrsDocumentResponseDTO>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetGroupSrsDocuments(int groupId)
         {
@@ -338,7 +338,7 @@ namespace SWP391_JGMS.Controllers
         /// <summary>
         /// Get a single SRS document by ID with all included requirements.
         /// </summary>
-        [HttpGet("groups/{groupId}/srs/{documentId}")]
+        [HttpGet("groups/{groupId}/srs-documents/{documentId}")]
         [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetGroupSrsDocument(int groupId, int documentId)
@@ -359,7 +359,7 @@ namespace SWP391_JGMS.Controllers
         /// Snapshots all (or selected) requirements into a new SRS version.
         /// Pass requirementIds to include specific requirements, or omit to include all.
         /// </summary>
-        [HttpPost("groups/{groupId}/srs/generate")]
+        [HttpPost("groups/{groupId}/srs-documents/generate")]
         [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> GenerateSrsDocument(int groupId, [FromBody] CreateSrsDocumentDTO dto)
@@ -377,7 +377,7 @@ namespace SWP391_JGMS.Controllers
         /// Update SRS document metadata (title, version, introduction, scope, status).
         /// Set status to "published" to finalize the document.
         /// </summary>
-        [HttpPut("groups/{groupId}/srs/{documentId}")]
+        [HttpPut("groups/{groupId}/srs-documents/{documentId}")]
         [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
         public async Task<IActionResult> UpdateSrsDocument(int groupId, int documentId, [FromBody] UpdateSrsDocumentDTO dto)
         {
@@ -395,7 +395,7 @@ namespace SWP391_JGMS.Controllers
         /// The file is formatted with a proper SRS structure including table of contents,
         /// introduction, scope, functional/non-functional requirements, and a summary table.
         /// </summary>
-        [HttpGet("groups/{groupId}/srs/{documentId}/download")]
+        [HttpGet("groups/{groupId}/srs-documents/{documentId}/download")]
         [Produces("text/html")]
         [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]

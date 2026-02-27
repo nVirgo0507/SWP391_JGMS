@@ -14,7 +14,7 @@ namespace SWP391_JGMS.Controllers
     /// Error Message: "Only team leaders can manage requirements"
     /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/team-member")]
     [Produces("application/json")]
     public class TeamMemberController : ControllerBase
     {

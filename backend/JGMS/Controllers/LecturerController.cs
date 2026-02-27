@@ -11,7 +11,7 @@ namespace SWP391_JGMS.Controllers
     /// </summary>
     [ApiController]
     [Authorize(Roles = "lecturer")]
-    [Route("api/[controller]")]
+    [Route("api/lecturers")]
     [Produces("application/json")]
     public class LecturerController : ControllerBase
     {
