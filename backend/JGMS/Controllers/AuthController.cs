@@ -6,6 +6,7 @@ namespace SWP391_JGMS.Controllers
 {
 	[ApiController]
 	[Route("api/auth")]
+	[Produces("application/json")]
 	public class AuthController : ControllerBase
 	{
 		private readonly IUserService _userService;
@@ -17,27 +18,36 @@ namespace SWP391_JGMS.Controllers
 		[HttpPost("register")]
 		public async Task<IActionResult> Register([FromBody]RegisterDTO dto)
 		{
-			if (!ModelState.IsValid)
+			try
 			{
-				return BadRequest(ModelState);
+				if (!ModelState.IsValid)
+					return BadRequest(ModelState);
+
+				await _userService.RegisterAsync(dto);
+				return Ok(new { message = "Register success" });
 			}
-				
-			await _userService.RegisterAsync(dto);
-			return Ok("Register success");
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
 		}
 
 		[HttpPost("login")]
-		public async Task<IActionResult> Login(LoginDTO dto)
+		public async Task<IActionResult> Login([FromBody] LoginDTO dto)
 		{
-			var token = await _userService.LoginAsync(dto);
-
-			if (token == null)
-				return Unauthorized("Invalid email or password");
-
-			return Ok(new
+			try
 			{
-				accessToken = token
-			});
+				var token = await _userService.LoginAsync(dto);
+
+				if (token == null)
+					return Unauthorized(new { message = "Invalid email or password" });
+
+				return Ok(new { accessToken = token });
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
 		}
 	}
 }
