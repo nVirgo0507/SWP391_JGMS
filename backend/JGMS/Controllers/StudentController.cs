@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Student;
+﻿﻿using BLL.DTOs.Student;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +20,7 @@ namespace SWP391_JGMS.Controllers
     /// </summary>
     [ApiController]
     [Authorize(Roles = "student")]
-	[Route("api/student")]
+	[Route("api/students")]
     public class StudentController : ControllerBase
     {
         private readonly IStudentService _studentService;
@@ -145,6 +145,25 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var statistics = await _studentService.GetPersonalStatisticsAsync(userId, projectId);
+                return Ok(statistics);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get task statistics grouped by status
+        /// Shows count of tasks in each status: todo, in_progress, done
+        /// </summary>
+        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
+        [HttpGet("statistics/tasks-by-status")]
+        public async Task<IActionResult> GetTaskStatisticsByStatus([FromQuery] int userId)
+        {
+            try
+            {
+                var statistics = await _studentService.GetTaskStatisticsByStatusAsync(userId);
                 return Ok(statistics);
             }
             catch (Exception ex)

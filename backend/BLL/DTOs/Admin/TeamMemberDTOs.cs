@@ -9,6 +9,17 @@ namespace BLL.DTOs.Admin
     /// </summary>
     public class UpdateTaskStatusDTO
     {
+        /// <summary>
+        /// Task status. Accepts multiple formats (case-insensitive):
+        /// - "todo", "To Do", "to do", "to_do"
+        /// - "in_progress", "In Progress", "in progress", "in-progress"
+        /// - "done", "Done"
+        /// Spaces and hyphens are automatically converted to underscores.
+        /// </summary>
+        /// <example>in_progress</example>
+        [Required]
+        public string Status { get; set; } = null!;
+
         public string? Title { get; set; }
 
         public string? Description { get; set; }
