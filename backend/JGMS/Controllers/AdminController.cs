@@ -1,28 +1,38 @@
-﻿﻿using BLL.DTOs.Admin;
+﻿﻿﻿using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Security.Claims;
 
 namespace SWP391_JGMS.Controllers
 {
     /// <summary>
-    /// SECURITY WARNING: This controller currently has NO authentication or authorization.
-    /// Any user can access these endpoints. Before deploying to production:
-    /// 1. Implement JWT authentication in Program.cs
-    /// 2. Add [Authorize(Roles = "admin")] attribute to this controller or individual endpoints
-    /// 3. Configure authentication middleware
-    /// See: https://learn.microsoft.com/en-us/aspnet/core/security/authentication/
+    /// Admin API endpoints — user management, group management, and integration configuration.
+    /// All endpoints require admin role authentication via JWT.
     /// </summary>
     [ApiController]
 	[Authorize(Roles = "admin")]
 	[Route("api/admin")]
+    [Produces("application/json")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;
+        private readonly IIntegrationService _integrationService;
 
-        public AdminController(IAdminService adminService)
+        public AdminController(IAdminService adminService, IIntegrationService integrationService)
         {
             _adminService = adminService;
+            _integrationService = integrationService;
+        }
+
+        /// <summary>Reads the authenticated user's ID from the JWT sub claim.</summary>
+        private int GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            if (int.TryParse(userIdClaim, out var id)) return id;
+            throw new UnauthorizedAccessException("Invalid or missing user identity in token.");
         }
 
         #region User Management
@@ -360,6 +370,109 @@ namespace SWP391_JGMS.Controllers
                 }
                 return BadRequest(new { message = errorMessage });
             }
+        }
+
+        #endregion
+
+        #region User Integration Management (GitHub & Jira)
+
+        /// <summary>
+        /// Configure GitHub integration for a user — sets their github_username.
+        /// </summary>
+        [HttpPost("users/{targetUserId}/github")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> ConfigureGithub(int targetUserId, [FromBody] GitHubConfigureRequest request)
+        {
+            try
+            {
+                var user = await _integrationService.ConfigureGithubAsync(GetCurrentUserId(), targetUserId, request.GithubUsername);
+                return Ok(user);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Remove GitHub integration for a user — clears their github_username.
+        /// </summary>
+        [HttpDelete("users/{targetUserId}/github")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> RemoveGithub(int targetUserId)
+        {
+            try
+            {
+                var user = await _integrationService.RemoveGithubAsync(GetCurrentUserId(), targetUserId);
+                return Ok(user);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Configure Jira integration for a user — sets their jira_account_id.
+        /// </summary>
+        [HttpPost("users/{targetUserId}/jira")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> ConfigureJira(int targetUserId, [FromBody] JiraConfigureRequest request)
+        {
+            try
+            {
+                var user = await _integrationService.ConfigureJiraAsync(GetCurrentUserId(), targetUserId, request.JiraAccountId);
+                return Ok(user);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Remove Jira integration for a user — clears their jira_account_id.
+        /// </summary>
+        [HttpDelete("users/{targetUserId}/jira")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> RemoveJira(int targetUserId)
+        {
+            try
+            {
+                var user = await _integrationService.RemoveJiraAsync(GetCurrentUserId(), targetUserId);
+                return Ok(user);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get all users with their GitHub/Jira integration status.
+        /// </summary>
+        [HttpGet("integrations")]
+        [ProducesResponseType(typeof(List<IntegrationStatusDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAllIntegrations()
+        {
+            try
+            {
+                var integrations = await _integrationService.GetAllIntegrationsAsync(GetCurrentUserId());
+                return Ok(integrations);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Test integration connectivity (GitHub or Jira).
+        /// Pass integrationType = "GitHub" or "Jira".
+        /// </summary>
+        [HttpPost("integrations/test")]
+        [ProducesResponseType(typeof(IntegrationTestResultDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> TestIntegration([FromQuery] string integrationType)
+        {
+            try
+            {
+                var result = await _integrationService.TestIntegrationAsync(GetCurrentUserId(), integrationType);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         #endregion
