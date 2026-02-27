@@ -57,7 +57,7 @@ namespace SWP391_JGMS.Controllers
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                if (ex.Message.Contains("Access denied")) return Forbid();
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }

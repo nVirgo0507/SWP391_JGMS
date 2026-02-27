@@ -23,6 +23,19 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
+
+        // CORS — allow frontend apps to call the API
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowFrontend", policy =>
+            {
+                policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "http://localhost:4200")
+                      .AllowAnyHeader()
+                      .AllowAnyMethod()
+                      .AllowCredentials();
+            });
+        });
+
         builder.Services.AddControllers()
             .AddJsonOptions(options =>
             {
@@ -176,6 +189,7 @@ public class Program
         }
 
         app.UseHttpsRedirection();
+		app.UseCors("AllowFrontend");
 		app.UseAuthentication();
 		app.UseAuthorization();
         app.MapControllers();

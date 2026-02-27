@@ -2,25 +2,24 @@
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
 using System.IO;
+using System.Security.Claims;
 
 namespace SWP391_JGMS.Controllers
 {
     /// <summary>
-    /// Student/Team Member API for basic operations:
+    /// Student API for basic operations:
     /// - View assigned tasks
     /// - Update task status
     /// - View personal statistics
     /// - Update profile information
     /// - Access SRS documents
-    ///
-    /// SECURITY NOTE: This controller currently has NO authentication.
-    /// The userId is passed as a parameter, which should be replaced with
-    /// authentication once JWT is implemented. Use [Authorize] attribute.
     /// </summary>
     [ApiController]
     [Authorize(Roles = "student")]
 	[Route("api/students")]
+    [Produces("application/json")]
     public class StudentController : ControllerBase
     {
         private readonly IStudentService _studentService;
@@ -30,18 +29,25 @@ namespace SWP391_JGMS.Controllers
             _studentService = studentService;
         }
 
+        private int GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            if (int.TryParse(userIdClaim, out var id)) return id;
+            throw new UnauthorizedAccessException("Invalid or missing user identity in token.");
+        }
+
         #region View Assigned Tasks
 
         /// <summary>
         /// Get all tasks assigned to the current student
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("tasks")]
-        public async Task<IActionResult> GetMyTasks([FromQuery] int userId)
+        public async Task<IActionResult> GetMyTasks()
         {
             try
             {
-                var tasks = await _studentService.GetMyTasksAsync(userId);
+                var tasks = await _studentService.GetMyTasksAsync(GetCurrentUserId());
                 return Ok(tasks);
             }
             catch (Exception ex)
@@ -53,14 +59,12 @@ namespace SWP391_JGMS.Controllers
         /// <summary>
         /// Get a specific task by ID
         /// </summary>
-        /// <param name="taskId">Task ID</param>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("tasks/{taskId}")]
-        public async Task<IActionResult> GetTaskById(int taskId, [FromQuery] int userId)
+        public async Task<IActionResult> GetTaskById(int taskId)
         {
             try
             {
-                var task = await _studentService.GetTaskByIdAsync(taskId, userId);
+                var task = await _studentService.GetTaskByIdAsync(taskId, GetCurrentUserId());
 
                 if (task == null)
                 {
@@ -104,7 +108,6 @@ namespace SWP391_JGMS.Controllers
         [HttpPut("tasks/{taskId}/status")]
         public async Task<IActionResult> UpdateTaskStatus(
             int taskId,
-            [FromQuery] int userId,
             [FromBody] UpdateTaskStatusDTO dto)
         {
             try
@@ -114,7 +117,7 @@ namespace SWP391_JGMS.Controllers
                     return BadRequest(ModelState);
                 }
 
-                await _studentService.UpdateTaskStatusAsync(taskId, userId, dto);
+                await _studentService.UpdateTaskStatusAsync(taskId, GetCurrentUserId(), dto);
                 return Ok(new { message = "Task status updated successfully" });
             }
             catch (UnauthorizedAccessException ex)
@@ -139,12 +142,11 @@ namespace SWP391_JGMS.Controllers
         /// <param name="projectId">Optional project ID to filter statistics</param>
         [HttpGet("statistics")]
         public async Task<IActionResult> GetPersonalStatistics(
-            [FromQuery] int userId,
             [FromQuery] int? projectId = null)
         {
             try
             {
-                var statistics = await _studentService.GetPersonalStatisticsAsync(userId, projectId);
+                var statistics = await _studentService.GetPersonalStatisticsAsync(GetCurrentUserId(), projectId);
                 return Ok(statistics);
             }
             catch (Exception ex)
@@ -159,11 +161,11 @@ namespace SWP391_JGMS.Controllers
         /// </summary>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("statistics/tasks-by-status")]
-        public async Task<IActionResult> GetTaskStatisticsByStatus([FromQuery] int userId)
+        public async Task<IActionResult> GetTaskStatisticsByStatus()
         {
             try
             {
-                var statistics = await _studentService.GetTaskStatisticsByStatusAsync(userId);
+                var statistics = await _studentService.GetTaskStatisticsByStatusAsync(GetCurrentUserId());
                 return Ok(statistics);
             }
             catch (Exception ex)
@@ -180,12 +182,11 @@ namespace SWP391_JGMS.Controllers
         /// <param name="projectId">Optional project ID to filter commits</param>
         [HttpGet("commits")]
         public async Task<IActionResult> GetCommitHistory(
-            [FromQuery] int userId,
             [FromQuery] int? projectId = null)
         {
             try
             {
-                var commits = await _studentService.GetCommitHistoryAsync(userId, projectId);
+                var commits = await _studentService.GetCommitHistoryAsync(GetCurrentUserId(), projectId);
                 return Ok(commits);
             }
             catch (Exception ex)
@@ -203,11 +204,11 @@ namespace SWP391_JGMS.Controllers
         /// </summary>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("profile")]
-        public async Task<IActionResult> GetMyProfile([FromQuery] int userId)
+        public async Task<IActionResult> GetMyProfile()
         {
             try
             {
-                var profile = await _studentService.GetMyProfileAsync(userId);
+                var profile = await _studentService.GetMyProfileAsync(GetCurrentUserId());
                 return Ok(profile);
             }
             catch (Exception ex)
@@ -224,7 +225,6 @@ namespace SWP391_JGMS.Controllers
         /// <param name="dto">Update profile DTO</param>
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateMyProfile(
-            [FromQuery] int userId,
             [FromBody] UpdateProfileDTO dto)
         {
             try
@@ -234,7 +234,7 @@ namespace SWP391_JGMS.Controllers
                     return BadRequest(ModelState);
                 }
 
-                var profile = await _studentService.UpdateMyProfileAsync(userId, dto);
+                var profile = await _studentService.UpdateMyProfileAsync(GetCurrentUserId(), dto);
                 return Ok(profile);
             }
             catch (Exception ex)
@@ -254,13 +254,11 @@ namespace SWP391_JGMS.Controllers
         /// <param name="projectId">Project ID</param>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("projects/{projectId}/srs-documents")]
-        public async Task<IActionResult> GetSrsDocumentsByProject(
-            int projectId,
-            [FromQuery] int userId)
+        public async Task<IActionResult> GetSrsDocumentsByProject(int projectId)
         {
             try
             {
-                var documents = await _studentService.GetSrsDocumentsByProjectAsync(projectId, userId);
+                var documents = await _studentService.GetSrsDocumentsByProjectAsync(projectId, GetCurrentUserId());
                 return Ok(documents);
             }
             catch (UnauthorizedAccessException ex)
@@ -280,13 +278,11 @@ namespace SWP391_JGMS.Controllers
         /// <param name="documentId">Document ID</param>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("srs-documents/{documentId}")]
-        public async Task<IActionResult> GetSrsDocumentById(
-            int documentId,
-            [FromQuery] int userId)
+        public async Task<IActionResult> GetSrsDocumentById(int documentId)
         {
             try
             {
-                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, userId);
+                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, GetCurrentUserId());
 
                 if (document == null)
                 {
@@ -313,13 +309,11 @@ namespace SWP391_JGMS.Controllers
         /// <param name="documentId">Document ID</param>
         /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("srs-documents/{documentId}/download")]
-        public async Task<IActionResult> DownloadSrsDocument(
-            int documentId,
-            [FromQuery] int userId)
+        public async Task<IActionResult> DownloadSrsDocument(int documentId)
         {
             try
             {
-                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, userId);
+                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, GetCurrentUserId());
 
                 if (document == null)
                 {
