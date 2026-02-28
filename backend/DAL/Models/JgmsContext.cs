@@ -552,6 +552,9 @@ public partial class JgmsContext : DbContext
                 .HasMaxLength(200)
                 .HasColumnName("project_name");
             entity.Property(e => e.StartDate).HasColumnName("start_date");
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasColumnType("project_status");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")

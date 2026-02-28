@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,6 +16,11 @@ namespace DAL.Repositories
         public async Task<StudentGroup?> GetByIdAsync(int groupId)
         {
             return await _context.StudentGroups.FirstOrDefaultAsync(g => g.GroupId == groupId);
+        }
+
+        public async Task<StudentGroup?> GetByGroupCodeAsync(string groupCode)
+        {
+            return await _context.StudentGroups.FirstOrDefaultAsync(g => g.GroupCode == groupCode);
         }
 
         public async Task<StudentGroup?> GetGroupWithDetailsAsync(int groupId)

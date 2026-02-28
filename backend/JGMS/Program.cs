@@ -193,6 +193,8 @@ public class Program
 		// Jira Integration services
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
+		// Identifier resolver — converts group codes, emails, etc. to internal IDs
+		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
 
         var app = builder.Build();
 

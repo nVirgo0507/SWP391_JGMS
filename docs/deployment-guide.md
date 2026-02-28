@@ -82,33 +82,39 @@ If you have PostgreSQL installed on your PC:
 
 > 💡 Don't have PostgreSQL? Install it: `winget install PostgreSQL.PostgreSQL` or download from [postgresql.org](https://www.postgresql.org/download/windows/)
 
-### Database Option 2: Use DBeaver (GUI — No Command Line)
+### Database Option 2: Use a Database GUI (No Command Line)
 
-1. Download [DBeaver](https://dbeaver.io/download/) (free)
-2. In Render dashboard, click your database → **Info** tab → find the **External Database URL**:
+Use [Beekeeper Studio](https://www.beekeeperstudio.io/) (free) or [DBeaver](https://dbeaver.io/download/) (free).
+
+1. In Render dashboard, click your database → **Info** tab → find the **External Database URL**:
    ```
-   postgres://admin:aB3xY9kLmN7pQ2@dpg-abc123.singapore-postgres.render.com/jgms
+   postgres://admin:XXXX@dpg-abc123.singapore-postgres.render.com/jgms
    ```
-3. In DBeaver: **Database** → **New Database Connection** → **PostgreSQL**
-4. Fill in the fields from your URL:
+2. Create a new PostgreSQL connection with these fields:
    - **Host:** `dpg-abc123.singapore-postgres.render.com`
    - **Port:** `5432`
    - **Database:** `jgms`
    - **Username:** `admin`
-   - **Password:** `aB3xY9kLmN7pQ2`
-5. Click **Test Connection** → should say "Connected"
-6. Click **Finish**
-7. Open an **SQL Editor** (right-click database → SQL Editor → New SQL Script)
-8. Open the file `database/init.sql` from your project → **Select All** → **Copy** → **Paste** into DBeaver
-9. Click the ▶️ **Execute** button (or press `Ctrl+Enter`)
-10. ✅ Done! All tables and sample data are created.
+   - **Password:** `XXXX`
+   - **Enable SSL:** ✅ Yes (Render requires SSL)
+3. Click **Test Connection** → should say "Connected"
+4. Open an SQL editor / new query tab
+5. Open `database/init.sql` from your project → **Select All** → **Copy** → **Paste** into the editor
+6. Click ▶️ **Run** / **Execute**
+7. ✅ Done! All tables and sample data are created.
+
+**Verify it worked** — run this query:
+```sql
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;
+```
+You should see 15+ tables (user, project, task, requirement, etc.).
 
 ### Database Option 3: Use `psql` from Command Line
 
 If you have PostgreSQL installed locally:
 ```bash
 # Replace with YOUR External Database URL from Render
-psql "postgres://admin:aB3xY9kLmN7pQ2@dpg-abc123.singapore-postgres.render.com/jgms" -f database/init.sql
+psql "postgres://admin:XXXX@dpg-abc123.singapore-postgres.render.com/jgms" -f database/init.sql
 ```
 
 ### Database Option 4: Use Render Shell (no install needed, but slow)
@@ -136,14 +142,14 @@ psql "postgres://admin:aB3xY9kLmN7pQ2@dpg-abc123.singapore-postgres.render.com/j
 
 Render gives you a URL like this:
 ```
-postgres://admin:aB3xY9kLmN7pQ2@dpg-abc123def456.singapore-postgres.render.com/jgms
+postgres://admin:XXXXX@dpg-XXXXX.singapore-postgres.render.com/jgms
          ─────  ───────────────  ──────────────────────────────────────────────  ────
          user   password         host                                           database
 ```
 
 Convert it to this format for the environment variable:
 ```
-Host=dpg-abc123def456.singapore-postgres.render.com;Port=5432;Database=jgms;Username=admin;Password=aB3xY9kLmN7pQ2
+Host=dpg-XXXXX.singapore-postgres.render.com;Port=5432;Database=jgms;Username=admin;Password=XXXX
 ```
 
 **Just rearrange the parts — don't change any values:**

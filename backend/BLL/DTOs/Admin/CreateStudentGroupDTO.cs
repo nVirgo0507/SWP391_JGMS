@@ -1,10 +1,11 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿﻿using System.ComponentModel.DataAnnotations;
 
 namespace BLL.DTOs.Admin
 {
     /// <summary>
-    /// BR-053: Request DTO to create a new student group
-    /// Requires valid lecturer and team leader user IDs
+    /// Request DTO to create a new student group.
+    /// Requires valid lecturer ID. Leader and initial members are optional.
+    /// If a leader is specified, they are automatically added as a group member.
     /// </summary>
     public class CreateStudentGroupDTO
     {
@@ -18,5 +19,11 @@ namespace BLL.DTOs.Admin
         public int LecturerId { get; set; }
 
         public int? LeaderId { get; set; }
+
+        /// <summary>
+        /// Optional list of student user IDs to add as initial group members.
+        /// The leader (if specified) is added automatically — no need to include them here.
+        /// </summary>
+        public List<int>? MemberIds { get; set; }
     }
 }

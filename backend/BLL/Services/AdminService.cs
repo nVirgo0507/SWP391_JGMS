@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Admin;
+﻿﻿using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
@@ -13,16 +13,19 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly IStudentGroupRepository _groupRepository;
         private readonly IGroupMemberRepository _memberRepository;
+        private readonly IProjectRepository _projectRepository;
         private readonly PasswordHasher<User> _passwordHasher;
 
         public AdminService(
             IUserRepository userRepository,
             IStudentGroupRepository groupRepository,
-            IGroupMemberRepository memberRepository)
+            IGroupMemberRepository memberRepository,
+            IProjectRepository projectRepository)
         {
             _userRepository = userRepository;
             _groupRepository = groupRepository;
             _memberRepository = memberRepository;
+            _projectRepository = projectRepository;
             _passwordHasher = new PasswordHasher<User>();
         }
 
@@ -343,6 +346,25 @@ namespace BLL.Services
                 }
             }
 
+            // Validate initial members if provided
+            var validatedMemberIds = new HashSet<int>();
+            if (dto.MemberIds != null && dto.MemberIds.Count > 0)
+            {
+                foreach (var memberId in dto.MemberIds)
+                {
+                    var member = await _userRepository.GetByIdAsync(memberId);
+                    if (member == null)
+                    {
+                        throw new Exception($"User with ID {memberId} not found");
+                    }
+                    if (member.Role != UserRole.student)
+                    {
+                        throw new Exception($"User '{member.FullName}' (ID {memberId}) is not a student (current role: {member.Role})");
+                    }
+                    validatedMemberIds.Add(memberId);
+                }
+            }
+
             var group = new StudentGroup
             {
                 GroupCode = dto.GroupCode,
@@ -355,6 +377,25 @@ namespace BLL.Services
             };
 
             await _groupRepository.AddAsync(group);
+
+            // Auto-add leader as a group member with is_leader = true
+            if (dto.LeaderId.HasValue)
+            {
+                validatedMemberIds.Add(dto.LeaderId.Value); // ensure leader is in the set
+            }
+
+            // Add all members (leader + any extra members from MemberIds)
+            foreach (var memberId in validatedMemberIds)
+            {
+                var groupMember = new GroupMember
+                {
+                    GroupId = group.GroupId,
+                    UserId = memberId,
+                    IsLeader = dto.LeaderId.HasValue && memberId == dto.LeaderId.Value,
+                    JoinedAt = DateTime.UtcNow
+                };
+                await _memberRepository.AddAsync(groupMember);
+            }
 
             // Reload with details
             var createdGroup = await _groupRepository.GetGroupWithDetailsAsync(group.GroupId);
@@ -400,7 +441,42 @@ namespace BLL.Services
                 {
                     throw new Exception("Invalid leader ID or user is not a student");
                 }
+
+                var oldLeaderId = group.LeaderId;
                 group.LeaderId = dto.LeaderId.Value;
+
+                // Clear is_leader on old leader if they exist as a member
+                if (oldLeaderId.HasValue && oldLeaderId.Value != dto.LeaderId.Value)
+                {
+                    var oldLeaderMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, oldLeaderId.Value);
+                    if (oldLeaderMember != null)
+                    {
+                        oldLeaderMember.IsLeader = false;
+                        await _memberRepository.UpdateAsync(oldLeaderMember);
+                    }
+                }
+
+                // Auto-add new leader as member if not already in the group
+                if (!await _memberRepository.IsMemberOfGroupAsync(groupId, dto.LeaderId.Value))
+                {
+                    await _memberRepository.AddAsync(new GroupMember
+                    {
+                        GroupId = groupId,
+                        UserId = dto.LeaderId.Value,
+                        IsLeader = true,
+                        JoinedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    // Already a member — just set is_leader = true
+                    var existingMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, dto.LeaderId.Value);
+                    if (existingMember != null && existingMember.IsLeader != true)
+                    {
+                        existingMember.IsLeader = true;
+                        await _memberRepository.UpdateAsync(existingMember);
+                    }
+                }
             }
 
             if (dto.Status.HasValue)
@@ -559,6 +635,126 @@ namespace BLL.Services
                 MemberCount = group.GroupMembers.Count,
                 CreatedAt = group.CreatedAt,
                 UpdatedAt = group.UpdatedAt
+            };
+        }
+
+        #endregion
+
+        #region Project Management
+
+        public async Task<ProjectResponseDTO> CreateProjectAsync(int groupId, CreateProjectDTO dto)
+        {
+            // Validate group exists
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null)
+                throw new Exception($"Group with ID {groupId} not found");
+
+            // Validate group doesn't already have a project (1:1)
+            var existing = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (existing != null)
+                throw new Exception($"Group '{group.GroupCode}' already has a project: '{existing.ProjectName}'");
+
+            // Validate dates
+            if (dto.StartDate.HasValue && dto.EndDate.HasValue && dto.EndDate < dto.StartDate)
+                throw new Exception("End date cannot be before start date");
+
+            var project = new Project
+            {
+                GroupId = groupId,
+                ProjectName = dto.ProjectName,
+                Description = dto.Description,
+                StartDate = dto.StartDate,
+                EndDate = dto.EndDate,
+                Status = ProjectStatus.active,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await _projectRepository.AddAsync(project);
+
+            // Reload with group details
+            var created = await _projectRepository.GetByIdAsync(project.ProjectId);
+            return MapToProjectResponse(created!);
+        }
+
+        public async Task<ProjectResponseDTO> UpdateProjectAsync(int projectId, UpdateProjectDTO dto)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            if (project == null)
+                throw new Exception("Project not found");
+
+            if (!string.IsNullOrEmpty(dto.ProjectName))
+                project.ProjectName = dto.ProjectName;
+
+            if (dto.Description != null)
+                project.Description = dto.Description;
+
+            if (dto.StartDate.HasValue)
+                project.StartDate = dto.StartDate;
+
+            if (dto.EndDate.HasValue)
+                project.EndDate = dto.EndDate;
+
+            // Validate dates
+            if (project.StartDate.HasValue && project.EndDate.HasValue && project.EndDate < project.StartDate)
+                throw new Exception("End date cannot be before start date");
+
+            if (!string.IsNullOrEmpty(dto.Status))
+            {
+                if (Enum.TryParse<ProjectStatus>(dto.Status.ToLower(), out var status))
+                    project.Status = status;
+                else
+                    throw new Exception($"Invalid project status: '{dto.Status}'. Use 'active' or 'completed'.");
+            }
+
+            await _projectRepository.UpdateAsync(project);
+
+            var updated = await _projectRepository.GetByIdAsync(project.ProjectId);
+            return MapToProjectResponse(updated!);
+        }
+
+        public async Task<ProjectResponseDTO?> GetProjectByIdAsync(int projectId)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            return project == null ? null : MapToProjectResponse(project);
+        }
+
+        public async Task<ProjectResponseDTO?> GetProjectByGroupIdAsync(int groupId)
+        {
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            return project == null ? null : MapToProjectResponse(project);
+        }
+
+        public async Task<List<ProjectResponseDTO>> GetAllProjectsAsync()
+        {
+            var projects = await _projectRepository.GetAllAsync();
+            return projects.Select(MapToProjectResponse).ToList();
+        }
+
+        public async System.Threading.Tasks.Task DeleteProjectAsync(int projectId)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            if (project == null)
+                throw new Exception("Project not found");
+
+            await _projectRepository.DeleteAsync(projectId);
+        }
+
+        private ProjectResponseDTO MapToProjectResponse(Project project)
+        {
+            return new ProjectResponseDTO
+            {
+                ProjectId = project.ProjectId,
+                GroupId = project.GroupId,
+                GroupCode = project.Group?.GroupCode,
+                GroupName = project.Group?.GroupName,
+                ProjectName = project.ProjectName,
+                Description = project.Description,
+                StartDate = project.StartDate,
+                EndDate = project.EndDate,
+                Status = project.Status?.ToString(),
+                CreatedAt = project.CreatedAt,
+                UpdatedAt = project.UpdatedAt
             };
         }
 
