@@ -1,0 +1,12 @@
+﻿**/bin/
+**/obj/
+**/node_modules/
+**/.git/
+**/.vs/
+**/.idea/
+**/build_output.txt
+**/git_out.txt
+*.md
+docs/
+frontend/
+

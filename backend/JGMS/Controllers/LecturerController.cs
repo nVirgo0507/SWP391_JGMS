@@ -1,13 +1,16 @@
 using BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Security.Claims;
 
 namespace SWP391_JGMS.Controllers
 {
     /// <summary>
-    /// Lecturer API endpoints with group-scoped access control
-    /// BR-054: Lecturer Group-Scoped Access - Lecturers can only access groups assigned to them
+    /// Lecturer API endpoints with group-scoped access control.
+    /// Group endpoints accept a group code (e.g. "SE1234") or numeric group ID.
     /// </summary>
     [ApiController]
     [Authorize(Roles = "lecturer")]
@@ -16,175 +19,162 @@ namespace SWP391_JGMS.Controllers
     public class LecturerController : ControllerBase
     {
         private readonly ILecturerService _lecturerService;
+        private readonly IdentifierResolver _resolver;
 
-        public LecturerController(ILecturerService lecturerService)
+        public LecturerController(ILecturerService lecturerService, IdentifierResolver resolver)
         {
             _lecturerService = lecturerService;
+            _resolver = resolver;
+        }
+
+        private int GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            if (int.TryParse(userIdClaim, out var id)) return id;
+            throw new UnauthorizedAccessException("Invalid or missing user identity in token.");
         }
 
         /// <summary>
-        /// BR-054: Get all groups assigned to the current lecturer
-        /// Only returns groups where lecturer_id matches current user
+        /// Get all groups assigned to the current lecturer.
         /// </summary>
-        /// <param name="lecturerId">The ID of the current lecturer user</param>
-        /// <returns>List of groups assigned to the lecturer</returns>
         [HttpGet("groups")]
         [ProducesResponseType(typeof(List<StudentGroupResponseDTO>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> GetMyGroups([FromQuery] int lecturerId)
+        public async Task<IActionResult> GetMyGroups()
         {
             try
             {
-                var groups = await _lecturerService.GetMyGroupsAsync(lecturerId);
+                var groups = await _lecturerService.GetMyGroupsAsync(GetCurrentUserId());
                 return Ok(groups);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-054: Get details of a specific group assigned to the lecturer
-        /// Validates that lecturer_id in group matches current user
-        /// Error: "Access denied. You are not assigned to this group."
+        /// Get details of a specific group assigned to the lecturer.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        /// <param name="lecturerId">The ID of the current lecturer user</param>
-        /// <param name="groupId">The ID of the group to retrieve</param>
-        /// <returns>Group details if lecturer is assigned</returns>
-        [HttpGet("groups/{groupId}")]
+        [HttpGet("groups/{groupCode}")]
         [ProducesResponseType(typeof(StudentGroupResponseDTO), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> GetGroupById([FromQuery] int lecturerId, int groupId)
+        public async Task<IActionResult> GetGroupById(string groupCode)
         {
             try
             {
-                var group = await _lecturerService.GetGroupByIdAsync(lecturerId, groupId);
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var group = await _lecturerService.GetGroupByIdAsync(GetCurrentUserId(), groupId);
                 if (group == null)
                     return NotFound(new { message = "Group not found" });
                 return Ok(group);
             }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                // BR-054: Access denied error for unauthorized lecturer
                 if (ex.Message.Contains("Access denied"))
-                    return Forbid();
+                    return StatusCode(403, new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }
 
         /// <summary>
-        /// BR-054: Get all members in a group assigned to the lecturer
-        /// Validates lecturer access before retrieving members
-        /// Error: "Access denied. You are not assigned to this group."
+        /// Get all members in a group assigned to the lecturer.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        /// <param name="lecturerId">The ID of the current lecturer user</param>
-        /// <param name="groupId">The ID of the group</param>
-        /// <returns>List of group members</returns>
-        [HttpGet("groups/{groupId}/members")]
+        [HttpGet("groups/{groupCode}/members")]
         [ProducesResponseType(typeof(List<GroupMemberResponseDTO>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> GetGroupMembers([FromQuery] int lecturerId, int groupId)
+        public async Task<IActionResult> GetGroupMembers(string groupCode)
         {
             try
             {
-                var members = await _lecturerService.GetGroupMembersAsync(lecturerId, groupId);
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var members = await _lecturerService.GetGroupMembersAsync(GetCurrentUserId(), groupId);
                 return Ok(members);
             }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                // BR-054: Access denied error for unauthorized lecturer
                 if (ex.Message.Contains("Access denied"))
-                    return Forbid();
+                    return StatusCode(403, new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }
 
         /// <summary>
-        /// BR-054: Add a student to a group assigned to the lecturer
-        /// Validates lecturer access before adding member
-        /// Error: "Access denied. You are not assigned to this group."
+        /// Add a student to a group assigned to the lecturer.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        /// <param name="lecturerId">The ID of the current lecturer user</param>
-        /// <param name="groupId">The ID of the group</param>
-        /// <param name="dto">Request containing studentId</param>
-        /// <returns>Success message</returns>
-        [HttpPost("groups/{groupId}/members")]
+        [HttpPost("groups/{groupCode}/members")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> AddStudentToGroup([FromQuery] int lecturerId, int groupId, [FromBody] AddStudentToGroupDTO dto)
+        public async Task<IActionResult> AddStudentToGroup(string groupCode, [FromBody] AddStudentToGroupDTO dto)
         {
             try
             {
-                await _lecturerService.AddStudentToGroupAsync(lecturerId, groupId, dto.StudentId);
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _lecturerService.AddStudentToGroupAsync(GetCurrentUserId(), groupId, dto.StudentId);
                 return Ok(new { message = "Student added to group successfully" });
             }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                // BR-054: Access denied error for unauthorized lecturer
                 if (ex.Message.Contains("Access denied"))
-                    return Forbid();
+                    return StatusCode(403, new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }
 
         /// <summary>
-        /// BR-054: Remove a student from a group assigned to the lecturer
-        /// Validates lecturer access before removing member
-        /// Error: "Access denied. You are not assigned to this group."
+        /// Remove a student from a group assigned to the lecturer.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        /// <param name="lecturerId">The ID of the current lecturer user</param>
-        /// <param name="groupId">The ID of the group</param>
-        /// <param name="studentId">The ID of the student to remove</param>
-        /// <returns>Success message</returns>
-        [HttpDelete("groups/{groupId}/members/{studentId}")]
+        [HttpDelete("groups/{groupCode}/members/{studentId}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> RemoveStudentFromGroup([FromQuery] int lecturerId, int groupId, int studentId)
+        public async Task<IActionResult> RemoveStudentFromGroup(string groupCode, int studentId)
         {
             try
             {
-                await _lecturerService.RemoveStudentFromGroupAsync(lecturerId, groupId, studentId);
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _lecturerService.RemoveStudentFromGroupAsync(GetCurrentUserId(), groupId, studentId);
                 return Ok(new { message = "Student removed from group successfully" });
             }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                // BR-054: Access denied error for unauthorized lecturer
                 if (ex.Message.Contains("Access denied"))
-                    return Forbid();
+                    return StatusCode(403, new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }
 
         /// <summary>
-        /// BR-054: Update a group assigned to the lecturer
-        /// Validates lecturer access before allowing updates
-        /// Error: "Access denied. You are not assigned to this group."
+        /// Update a group assigned to the lecturer.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        /// <param name="lecturerId">The ID of the current lecturer user</param>
-        /// <param name="groupId">The ID of the group to update</param>
-        /// <param name="dto">Update request containing group details</param>
-        /// <returns>Updated group details</returns>
-        [HttpPut("groups/{groupId}")]
+        [HttpPut("groups/{groupCode}")]
         [ProducesResponseType(typeof(StudentGroupResponseDTO), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> UpdateGroup([FromQuery] int lecturerId, int groupId, [FromBody] UpdateStudentGroupDTO dto)
+        public async Task<IActionResult> UpdateGroup(string groupCode, [FromBody] UpdateStudentGroupDTO dto)
         {
             try
             {
-                var updatedGroup = await _lecturerService.UpdateGroupAsync(lecturerId, groupId, dto);
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var updatedGroup = await _lecturerService.UpdateGroupAsync(GetCurrentUserId(), groupId, dto);
                 return Ok(updatedGroup);
             }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                // BR-054: Access denied error for unauthorized lecturer
                 if (ex.Message.Contains("Access denied"))
-                    return Forbid();
+                    return StatusCode(403, new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }

@@ -551,6 +551,36 @@ namespace BLL.Services
                 LastSynced = issue.LastSynced
             };
         }
+
+        // ============================================================================
+        // Group-based wrappers (resolve groupId → projectId internally)
+        // ============================================================================
+
+        private async Task<int> ResolveProjectIdFromGroupAsync(int groupId)
+        {
+            var project = await _projectRepo.GetByGroupIdAsync(groupId);
+            if (project == null)
+                throw new Exception($"No project found for group {groupId}");
+            return project.ProjectId;
+        }
+
+        public async Task<JiraSyncResultDTO> SyncIssuesByGroupAsync(int userId, int groupId)
+        {
+            var projectId = await ResolveProjectIdFromGroupAsync(groupId);
+            return await SyncIssuesAsync(userId, projectId);
+        }
+
+        public async Task<JiraSyncResultDTO> GetSyncStatusByGroupAsync(int userId, int groupId)
+        {
+            var projectId = await ResolveProjectIdFromGroupAsync(groupId);
+            return await GetSyncStatusAsync(userId, projectId);
+        }
+
+        public async Task<List<JiraIssueDTO>> GetProjectIssuesByGroupAsync(int userId, int groupId)
+        {
+            var projectId = await ResolveProjectIdFromGroupAsync(groupId);
+            return await GetProjectIssuesAsync(userId, projectId);
+        }
     }
 }
 

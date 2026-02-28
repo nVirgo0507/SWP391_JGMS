@@ -15,6 +15,10 @@ namespace BLL.DTOs.Admin
         [Required]
         public int GroupId { get; set; }
 
+        public string? GroupCode { get; set; }
+
+        public string? GroupName { get; set; }
+
         [Required]
         public string ProjectName { get; set; } = null!;
 
@@ -23,6 +27,8 @@ namespace BLL.DTOs.Admin
         public DateOnly? StartDate { get; set; }
 
         public DateOnly? EndDate { get; set; }
+
+        public string? Status { get; set; }
 
         public DateTime? CreatedAt { get; set; }
 

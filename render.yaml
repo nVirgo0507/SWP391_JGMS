@@ -1,0 +1,29 @@
+﻿# Render Blueprint — one-click deploy
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: swp391-jgms-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: singapore
+    plan: free
+    envVars:
+      - key: ConnectionStrings__DefaultConnection
+        sync: false  # set manually in Render dashboard
+      - key: Jwt__Key
+        generateValue: true  # auto-generates a random secret
+      - key: Jwt__Issuer
+        value: SWP391_JGMS
+      - key: Jwt__Audience
+        value: SWP391_JGMS_USERS
+      - key: Jwt__ExpireMinutes
+        value: 120
+
+databases:
+  - name: jgms-db
+    plan: free
+    region: singapore
+    databaseName: jgms
+    user: admin
+

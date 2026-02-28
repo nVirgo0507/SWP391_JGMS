@@ -1,47 +1,70 @@
-﻿﻿using BLL.DTOs.Student;
+﻿using BLL.DTOs.Admin;
+using BLL.DTOs.Jira;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.IO;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Security.Claims;
+using StudentDTOs = BLL.DTOs.Student;
 
 namespace SWP391_JGMS.Controllers
 {
     /// <summary>
-    /// Student/Team Member API for basic operations:
-    /// - View assigned tasks
-    /// - Update task status
-    /// - View personal statistics
-    /// - Update profile information
-    /// - Access SRS documents
+    /// Student API — unified controller for all student operations.
+    /// Covers personal tasks, statistics, profile, and group-scoped actions.
     ///
-    /// SECURITY NOTE: This controller currently has NO authentication.
-    /// The userId is passed as a parameter, which should be replaced with
-    /// authentication once JWT is implemented. Use [Authorize] attribute.
+    /// Group endpoints accept a group code (e.g. "SE1234") or numeric group ID.
+    /// Leader-only endpoints are gated by is_leader checks inside the service layer.
     /// </summary>
     [ApiController]
     [Authorize(Roles = "student")]
-	[Route("api/students")]
+    [Route("api/students")]
+    [Produces("application/json")]
     public class StudentController : ControllerBase
     {
         private readonly IStudentService _studentService;
+        private readonly ITeamLeaderService _teamLeaderService;
+        private readonly ITeamMemberService _teamMemberService;
+        private readonly IdentifierResolver _resolver;
 
-        public StudentController(IStudentService studentService)
+        public StudentController(
+            IStudentService studentService,
+            ITeamLeaderService teamLeaderService,
+            ITeamMemberService teamMemberService,
+            IdentifierResolver resolver)
         {
             _studentService = studentService;
+            _teamLeaderService = teamLeaderService;
+            _teamMemberService = teamMemberService;
+            _resolver = resolver;
         }
 
-        #region View Assigned Tasks
+        /// <summary>Reads the authenticated user's ID from the JWT sub claim.</summary>
+        private int GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            if (int.TryParse(userIdClaim, out var id)) return id;
+            throw new UnauthorizedAccessException("Invalid or missing user identity in token.");
+        }
+
+        // ====================================================================
+        // My Tasks (all students)
+        // ====================================================================
+
+        #region My Tasks
 
         /// <summary>
-        /// Get all tasks assigned to the current student
+        /// Get all tasks assigned to the current student.
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("tasks")]
-        public async Task<IActionResult> GetMyTasks([FromQuery] int userId)
+        [ProducesResponseType(typeof(List<StudentDTOs.TaskResponseDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyTasks()
         {
             try
             {
-                var tasks = await _studentService.GetMyTasksAsync(userId);
+                var tasks = await _studentService.GetMyTasksAsync(GetCurrentUserId());
                 return Ok(tasks);
             }
             catch (Exception ex)
@@ -51,22 +74,19 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Get a specific task by ID
+        /// Get a specific task by ID (must be assigned to you).
         /// </summary>
-        /// <param name="taskId">Task ID</param>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("tasks/{taskId}")]
-        public async Task<IActionResult> GetTaskById(int taskId, [FromQuery] int userId)
+        [ProducesResponseType(typeof(StudentDTOs.TaskResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetTaskById(int taskId)
         {
             try
             {
-                var task = await _studentService.GetTaskByIdAsync(taskId, userId);
-
+                var task = await _studentService.GetTaskByIdAsync(taskId, GetCurrentUserId());
                 if (task == null)
-                {
                     return NotFound(new { message = "Task not found" });
-                }
-
                 return Ok(task);
             }
             catch (UnauthorizedAccessException ex)
@@ -79,42 +99,24 @@ namespace SWP391_JGMS.Controllers
             }
         }
 
-        #endregion
-
-        #region Update Task Status
-
         /// <summary>
-        /// Update the status of a task assigned to the student.
-        /// Team members can change status (To Do → In Progress → Done)
-        /// and add comments or log work hours.
-        ///
+        /// Update the status of a task assigned to you.
         /// Accepted status values (case-insensitive, flexible formatting):
         /// - "todo", "To Do", "to do", "to_do"
         /// - "in_progress", "In Progress", "in progress", "in-progress"
         /// - "done", "Done"
-        ///
-        /// Spaces and hyphens are automatically normalized to underscores.
         /// </summary>
-        /// <param name="taskId">Task ID</param>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
-        /// <param name="dto">Update task status DTO with status, optional comment, and work hours</param>
-        /// <response code="200">Status updated successfully</response>
-        /// <response code="400">Invalid status value or task not found</response>
-        /// <response code="403">User does not have permission to update this task</response>
         [HttpPut("tasks/{taskId}/status")]
-        public async Task<IActionResult> UpdateTaskStatus(
-            int taskId,
-            [FromQuery] int userId,
-            [FromBody] UpdateTaskStatusDTO dto)
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdateTaskStatus(int taskId, [FromBody] StudentDTOs.UpdateTaskStatusDTO dto)
         {
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
-                await _studentService.UpdateTaskStatusAsync(taskId, userId, dto);
+                await _studentService.UpdateTaskStatusAsync(taskId, GetCurrentUserId(), dto);
                 return Ok(new { message = "Task status updated successfully" });
             }
             catch (UnauthorizedAccessException ex)
@@ -127,24 +129,48 @@ namespace SWP391_JGMS.Controllers
             }
         }
 
+        /// <summary>
+        /// Mark a task as completed — sets CompletedAt timestamp.
+        /// Only works for tasks assigned to you.
+        /// </summary>
+        [HttpPost("tasks/{taskId}/complete")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CompleteTask(int taskId)
+        {
+            try
+            {
+                var task = await _teamMemberService.CompleteTaskAsync(GetCurrentUserId(), taskId);
+                return Ok(task);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied"))
+                    return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         #endregion
 
-        #region View Personal Statistics
+        // ====================================================================
+        // Statistics (all students)
+        // ====================================================================
+
+        #region Statistics
 
         /// <summary>
-        /// Get personal task and commit statistics
-        /// Shows completed vs pending tasks, commit history, contribution metrics
+        /// Get personal task and commit statistics overview.
+        /// Shows completed vs pending tasks, commit history, contribution metrics.
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
-        /// <param name="projectId">Optional project ID to filter statistics</param>
         [HttpGet("statistics")]
-        public async Task<IActionResult> GetPersonalStatistics(
-            [FromQuery] int userId,
-            [FromQuery] int? projectId = null)
+        [ProducesResponseType(typeof(StudentDTOs.PersonalStatisticsDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPersonalStatistics([FromQuery] int? projectId = null)
         {
             try
             {
-                var statistics = await _studentService.GetPersonalStatisticsAsync(userId, projectId);
+                var statistics = await _studentService.GetPersonalStatisticsAsync(GetCurrentUserId(), projectId);
                 return Ok(statistics);
             }
             catch (Exception ex)
@@ -154,16 +180,15 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Get task statistics grouped by status
-        /// Shows count of tasks in each status: todo, in_progress, done
+        /// Get task statistics grouped by status (todo, in_progress, done).
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("statistics/tasks-by-status")]
-        public async Task<IActionResult> GetTaskStatisticsByStatus([FromQuery] int userId)
+        [ProducesResponseType(typeof(StudentDTOs.TaskStatisticsByStatusDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetTaskStatisticsByStatus()
         {
             try
             {
-                var statistics = await _studentService.GetTaskStatisticsByStatusAsync(userId);
+                var statistics = await _studentService.GetTaskStatisticsByStatusAsync(GetCurrentUserId());
                 return Ok(statistics);
             }
             catch (Exception ex)
@@ -173,19 +198,51 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Get personal commit history
-        /// Fetches commits from GitHub with timeline and contribution details
+        /// Get personal task statistics (completion and progress metrics).
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
-        /// <param name="projectId">Optional project ID to filter commits</param>
-        [HttpGet("commits")]
-        public async Task<IActionResult> GetCommitHistory(
-            [FromQuery] int userId,
-            [FromQuery] int? projectId = null)
+        [HttpGet("statistics/tasks")]
+        [ProducesResponseType(typeof(PersonalTaskStatisticResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyTaskStatistics()
         {
             try
             {
-                var commits = await _studentService.GetCommitHistoryAsync(userId, projectId);
+                var statistics = await _teamMemberService.GetMyTaskStatisticsAsync(GetCurrentUserId());
+                if (statistics == null)
+                    return NotFound(new { message = "Task statistics not found" });
+                return Ok(statistics);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get personal commit statistics (commits this week/month, averages).
+        /// </summary>
+        [HttpGet("statistics/commits")]
+        [ProducesResponseType(typeof(CommitStatisticResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyCommitStatistics()
+        {
+            try
+            {
+                var statistics = await _teamMemberService.GetMyCommitStatisticsAsync(GetCurrentUserId());
+                if (statistics == null)
+                    return NotFound(new { message = "Commit statistics not found" });
+                return Ok(statistics);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get personal commit history timeline from GitHub.
+        /// </summary>
+        [HttpGet("commits")]
+        [ProducesResponseType(typeof(List<StudentDTOs.CommitHistoryDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetCommitHistory([FromQuery] int? projectId = null)
+        {
+            try
+            {
+                var commits = await _studentService.GetCommitHistoryAsync(GetCurrentUserId(), projectId);
                 return Ok(commits);
             }
             catch (Exception ex)
@@ -196,18 +253,22 @@ namespace SWP391_JGMS.Controllers
 
         #endregion
 
-        #region Profile Management
+        // ====================================================================
+        // Profile (all students)
+        // ====================================================================
+
+        #region Profile
 
         /// <summary>
-        /// Get current student's profile information
+        /// Get current student's profile information.
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("profile")]
-        public async Task<IActionResult> GetMyProfile([FromQuery] int userId)
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyProfile()
         {
             try
             {
-                var profile = await _studentService.GetMyProfileAsync(userId);
+                var profile = await _studentService.GetMyProfileAsync(GetCurrentUserId());
                 return Ok(profile);
             }
             catch (Exception ex)
@@ -217,24 +278,19 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Update basic profile information (phone, GitHub username, Jira account)
-        /// Students can only update specific fields, not role or status
+        /// Update basic profile information (phone, GitHub username, Jira account).
+        /// Students can only update specific fields, not role or status.
         /// </summary>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
-        /// <param name="dto">Update profile DTO</param>
         [HttpPut("profile")]
-        public async Task<IActionResult> UpdateMyProfile(
-            [FromQuery] int userId,
-            [FromBody] UpdateProfileDTO dto)
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> UpdateMyProfile([FromBody] StudentDTOs.UpdateProfileDTO dto)
         {
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
-                var profile = await _studentService.UpdateMyProfileAsync(userId, dto);
+                var profile = await _studentService.UpdateMyProfileAsync(GetCurrentUserId(), dto);
                 return Ok(profile);
             }
             catch (Exception ex)
@@ -245,24 +301,28 @@ namespace SWP391_JGMS.Controllers
 
         #endregion
 
-        #region SRS Documents
+        // ====================================================================
+        // SRS Documents — Personal Access (all students)
+        // Accepts group code (e.g. "SE1234") or group ID to identify project.
+        // ====================================================================
+
+        #region SRS Documents (Personal)
 
         /// <summary>
-        /// Get SRS documents for a specific project
-        /// Students can only access documents for projects they are members of
+        /// Get SRS documents for a project, identified by group code (e.g. "SE1234") or group ID.
+        /// Any group member can access. For leader-only SRS management, see the Group SRS Documents section.
         /// </summary>
-        /// <param name="projectId">Project ID</param>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
-        [HttpGet("projects/{projectId}/srs-documents")]
-        public async Task<IActionResult> GetSrsDocumentsByProject(
-            int projectId,
-            [FromQuery] int userId)
+        [HttpGet("my-srs-documents/{groupCode}")]
+        [ProducesResponseType(typeof(List<StudentDTOs.SrsDocumentDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetSrsDocumentsByProject(string groupCode)
         {
             try
             {
-                var documents = await _studentService.GetSrsDocumentsByProjectAsync(projectId, userId);
+                var projectId = await _resolver.ResolveProjectIdAsync(groupCode);
+                var documents = await _studentService.GetSrsDocumentsByProjectAsync(projectId, GetCurrentUserId());
                 return Ok(documents);
             }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (UnauthorizedAccessException ex)
             {
                 return StatusCode(403, new { message = ex.Message });
@@ -274,25 +334,18 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Get a specific SRS document by ID
-        /// Export/download functionality for SRS documents
+        /// Get a specific SRS document by ID.
         /// </summary>
-        /// <param name="documentId">Document ID</param>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("srs-documents/{documentId}")]
-        public async Task<IActionResult> GetSrsDocumentById(
-            int documentId,
-            [FromQuery] int userId)
+        [ProducesResponseType(typeof(StudentDTOs.SrsDocumentDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetSrsDocumentById(int documentId)
         {
             try
             {
-                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, userId);
-
+                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, GetCurrentUserId());
                 if (document == null)
-                {
                     return NotFound(new { message = "SRS document not found" });
-                }
-
                 return Ok(document);
             }
             catch (UnauthorizedAccessException ex)
@@ -306,54 +359,34 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Download SRS document file
-        /// Returns the actual file if FilePath exists
-        /// Security: Validates file path to prevent directory traversal attacks
+        /// Download SRS document file.
+        /// Security: Validates file path to prevent directory traversal attacks.
         /// </summary>
-        /// <param name="documentId">Document ID</param>
-        /// <param name="userId">Current user ID (will come from JWT claims in production)</param>
         [HttpGet("srs-documents/{documentId}/download")]
-        public async Task<IActionResult> DownloadSrsDocument(
-            int documentId,
-            [FromQuery] int userId)
+        public async Task<IActionResult> DownloadSrsDocument(int documentId)
         {
             try
             {
-                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, userId);
-
+                var document = await _studentService.GetSrsDocumentByIdAsync(documentId, GetCurrentUserId());
                 if (document == null)
-                {
                     return NotFound(new { message = "SRS document not found" });
-                }
 
                 if (string.IsNullOrEmpty(document.FilePath))
-                {
                     return NotFound(new { message = "Document file path not configured" });
-                }
 
-                // Security: Validate file path to prevent directory traversal
-                // Get the configured base directory for SRS documents from configuration
-                // For now, using a safe default - should be moved to appsettings.json
                 var baseDirectory = Path.Combine(Directory.GetCurrentDirectory(), "SrsDocuments");
-
-                // Combine the base directory with the stored file path and normalize
                 var fullPath = Path.GetFullPath(Path.Combine(baseDirectory, document.FilePath));
 
-                // Ensure the resolved path is within the allowed base directory
-                var normalizedBaseDirectory = Path.GetFullPath(baseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var normalizedBaseDirectory = Path.GetFullPath(baseDirectory)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 if (!fullPath.StartsWith(normalizedBaseDirectory, StringComparison.OrdinalIgnoreCase))
-                {
                     return BadRequest(new { message = "Invalid file path" });
-                }
 
                 if (!System.IO.File.Exists(fullPath))
-                {
                     return NotFound(new { message = "Document file not found on server" });
-                }
 
                 var fileBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
                 var fileName = $"{document.DocumentTitle}_v{document.Version}.pdf";
-
                 return File(fileBytes, "application/pdf", fileName);
             }
             catch (UnauthorizedAccessException ex)
@@ -364,6 +397,439 @@ namespace SWP391_JGMS.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        #endregion
+
+        // ====================================================================
+        // Group Project & Requirements (leader-gated by service layer)
+        // Accepts group code (e.g. "SE1234") or numeric group ID.
+        // ====================================================================
+
+        #region Group Project & Requirements
+
+        /// <summary>
+        /// Get project details for a group. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/project")]
+        [ProducesResponseType(typeof(ProjectResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGroupProject(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var project = await _teamLeaderService.GetGroupProjectAsync(GetCurrentUserId(), groupId);
+                if (project == null)
+                    return NotFound(new { message = "Project not found" });
+                return Ok(project);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get all requirements for a group project.
+        /// Any group member can view; only leaders can create/edit/delete.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/requirements")]
+        [ProducesResponseType(typeof(List<RequirementResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetGroupRequirements(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var requirements = await _teamMemberService.GetGroupRequirementsAsync(GetCurrentUserId(), groupId);
+                return Ok(requirements);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied"))
+                    return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Create a requirement and push it to Jira as a new issue. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/requirements")]
+        [ProducesResponseType(typeof(RequirementResponseDTO), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CreateRequirement(string groupCode, [FromBody] CreateRequirementDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var requirement = await _teamLeaderService.CreateRequirementAsync(GetCurrentUserId(), groupId, dto);
+                return CreatedAtAction(nameof(GetGroupRequirements), new { groupCode }, requirement);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Update a requirement and sync changes back to Jira. Leader only.
+        /// Accepts group code or group ID, and requirement ID.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/requirements/{requirementId}")]
+        [ProducesResponseType(typeof(RequirementResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdateRequirement(string groupCode, int requirementId, [FromBody] UpdateRequirementDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var requirement = await _teamLeaderService.UpdateRequirementAsync(GetCurrentUserId(), groupId, requirementId, dto);
+                return Ok(requirement);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Delete a requirement and remove the corresponding issue from Jira. Leader only.
+        /// </summary>
+        [HttpDelete("groups/{groupCode}/requirements/{requirementId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> DeleteRequirement(string groupCode, int requirementId)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _teamLeaderService.DeleteRequirementAsync(GetCurrentUserId(), groupId, requirementId);
+                return Ok(new { message = "Requirement deleted successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Reorder requirements hierarchy (Epic → Story → Task → Sub-task). Leader only.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/requirements/reorder")]
+        [ProducesResponseType(typeof(List<RequirementResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> ReorderRequirements(string groupCode, [FromBody] ReorderRequirementsDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var ordered = await _teamLeaderService.ReorderRequirementsAsync(GetCurrentUserId(), groupId, dto);
+                return Ok(ordered);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        #endregion
+
+        // ====================================================================
+        // Group Tasks & Jira Sync (leader-gated by service layer)
+        // ====================================================================
+
+        #region Group Tasks & Jira Sync
+
+        /// <summary>
+        /// Get all tasks for a group project. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/tasks")]
+        [ProducesResponseType(typeof(List<TaskResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetGroupTasks(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var tasks = await _teamLeaderService.GetGroupTasksAsync(GetCurrentUserId(), groupId);
+                return Ok(tasks);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Create a task, assign a member, set deadline and optionally link to Jira. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/tasks")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CreateTask(string groupCode, [FromBody] CreateTaskDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var task = await _teamLeaderService.CreateTaskAsync(GetCurrentUserId(), groupId, dto);
+                return CreatedAtAction(nameof(GetGroupTasks), new { groupCode }, task);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Create a task pre-populated from a synced Jira issue key (e.g. "SWP391-5"). Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/tasks/from-jira")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CreateTaskFromJiraIssue(string groupCode, [FromBody] CreateTaskFromJiraIssueDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var task = await _teamLeaderService.CreateTaskFromJiraIssueAsync(GetCurrentUserId(), groupId, dto);
+                return CreatedAtAction(nameof(GetGroupTasks), new { groupCode }, task);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Edit a task: update status, assignee, description, priority, due date. Leader only.
+        /// Changes are synced back to Jira if the task is linked to a Jira issue.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/tasks/{taskId}")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdateTask(string groupCode, int taskId, [FromBody] UpdateTaskDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var task = await _teamLeaderService.UpdateTaskAsync(GetCurrentUserId(), groupId, taskId, dto);
+                return Ok(task);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Assign a task to a group member. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/tasks/{taskId}/assign")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> AssignTask(string groupCode, int taskId, [FromBody] AssignTaskDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _teamLeaderService.AssignTaskAsync(GetCurrentUserId(), groupId, taskId, dto.MemberId);
+                return Ok(new { message = "Task assigned successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Delete a task. Also removes the linked Jira issue if integration is configured. Leader only.
+        /// </summary>
+        [HttpDelete("groups/{groupCode}/tasks/{taskId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> DeleteTask(string groupCode, int taskId)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _teamLeaderService.DeleteTaskAsync(GetCurrentUserId(), groupId, taskId);
+                return Ok(new { message = "Task deleted successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Move a task's linked Jira issue to a different sprint. Leader only.
+        /// Use sprintId = 0 to move the issue back to the backlog.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/tasks/{taskId}/sprint")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> MoveTaskToSprint(string groupCode, int taskId, [FromBody] MoveTaskToSprintDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var task = await _teamLeaderService.MoveTaskToSprintAsync(GetCurrentUserId(), groupId, taskId, dto.SprintId);
+                return Ok(task);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Link a task to a requirement. Creates a "Relates" issue link in Jira if applicable. Leader only.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/tasks/{taskId}/requirement")]
+        [ProducesResponseType(typeof(TaskResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> LinkTaskToRequirement(string groupCode, int taskId, [FromBody] LinkTaskToRequirementDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var task = await _teamLeaderService.LinkTaskToRequirementAsync(GetCurrentUserId(), groupId, taskId, dto.RequirementId);
+                return Ok(task);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Push all local changes (tasks + requirements) to Jira in bulk. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/sync-to-jira")]
+        [ProducesResponseType(typeof(JiraPushSyncResultDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> SyncToJira(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var result = await _teamLeaderService.SyncToJiraAsync(GetCurrentUserId(), groupId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        #endregion
+
+        // ====================================================================
+        // Group SRS Documents (leader-gated by service layer)
+        // ====================================================================
+
+        #region Group SRS Documents
+
+        /// <summary>
+        /// Get all SRS documents for a group's project. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/srs-documents")]
+        [ProducesResponseType(typeof(List<SrsDocumentResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetGroupSrsDocuments(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var documents = await _teamLeaderService.GetGroupSrsDocumentsAsync(GetCurrentUserId(), groupId);
+                return Ok(documents);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get a single SRS document by ID with all included requirements. Leader only.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/srs-documents/{documentId}")]
+        [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetGroupSrsDocument(string groupCode, int documentId)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var srs = await _teamLeaderService.GetGroupSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
+                if (srs == null)
+                    return NotFound(new { message = "SRS document not found" });
+                return Ok(srs);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Generate an SRS document from existing requirements. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/srs-documents/generate")]
+        [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GenerateSrsDocument(string groupCode, [FromBody] CreateSrsDocumentDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var srs = await _teamLeaderService.GenerateSrsDocumentAsync(GetCurrentUserId(), groupId, dto);
+                return CreatedAtAction(nameof(GetGroupSrsDocument), new { groupCode, documentId = srs.DocumentId }, srs);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Update SRS document metadata. Leader only.
+        /// Set status to "published" to finalize the document.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/srs-documents/{documentId}")]
+        [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdateSrsDocument(string groupCode, int documentId, [FromBody] UpdateSrsDocumentDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var srs = await _teamLeaderService.UpdateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
+                return Ok(srs);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Download the SRS document as an HTML file. Leader only.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/srs-documents/{documentId}/download")]
+        [Produces("text/html")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> DownloadGroupSrsDocument(string groupCode, int documentId)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var (content, fileName) = await _teamLeaderService.DownloadSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
+                return File(content, "text/html", fileName);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
         #endregion
