@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Admin;
+﻿﻿using BLL.DTOs.Admin;
 
 namespace BLL.Services.Interface
 {
@@ -110,6 +110,40 @@ namespace BLL.Services.Interface
         /// BR-053: Remove a student from a group
         /// </summary>
         System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, int studentId);
+
+        #endregion
+
+        #region Project Management
+
+        /// <summary>
+        /// Create a project linked to a group. Each group can only have one project.
+        /// </summary>
+        Task<ProjectResponseDTO> CreateProjectAsync(int groupId, CreateProjectDTO dto);
+
+        /// <summary>
+        /// Update an existing project.
+        /// </summary>
+        Task<ProjectResponseDTO> UpdateProjectAsync(int projectId, UpdateProjectDTO dto);
+
+        /// <summary>
+        /// Get a project by its ID.
+        /// </summary>
+        Task<ProjectResponseDTO?> GetProjectByIdAsync(int projectId);
+
+        /// <summary>
+        /// Get the project for a specific group.
+        /// </summary>
+        Task<ProjectResponseDTO?> GetProjectByGroupIdAsync(int groupId);
+
+        /// <summary>
+        /// Get all projects.
+        /// </summary>
+        Task<List<ProjectResponseDTO>> GetAllProjectsAsync();
+
+        /// <summary>
+        /// Delete a project.
+        /// </summary>
+        System.Threading.Tasks.Task DeleteProjectAsync(int projectId);
 
         #endregion
     }

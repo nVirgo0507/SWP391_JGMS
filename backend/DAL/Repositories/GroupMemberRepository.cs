@@ -1,4 +1,4 @@
-﻿﻿using DAL.Models;
+﻿﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -40,6 +40,12 @@ namespace DAL.Repositories
         {
             member.JoinedAt = DateTime.UtcNow;
             _context.GroupMembers.Add(member);
+            await _context.SaveChangesAsync();
+        }
+
+        public async System.Threading.Tasks.Task UpdateAsync(GroupMember member)
+        {
+            _context.GroupMembers.Update(member);
             await _context.SaveChangesAsync();
         }
 
