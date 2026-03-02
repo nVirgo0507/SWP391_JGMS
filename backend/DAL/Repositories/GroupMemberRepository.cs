@@ -59,10 +59,29 @@ namespace DAL.Repositories
             }
         }
 
+        public async System.Threading.Tasks.Task RemoveAllMembersAsync(int groupId)
+        {
+            var members = await _context.GroupMembers
+                .Where(gm => gm.GroupId == groupId)
+                .ToListAsync();
+
+            if (members.Count > 0)
+            {
+                _context.GroupMembers.RemoveRange(members);
+                await _context.SaveChangesAsync();
+            }
+        }
+
         public async Task<bool> IsMemberOfGroupAsync(int groupId, int userId)
         {
             return await _context.GroupMembers
                 .AnyAsync(gm => gm.GroupId == groupId && gm.UserId == userId);
+        }
+
+        public async Task<bool> IsStudentInAnyGroupAsync(int userId)
+        {
+            return await _context.GroupMembers
+                .AnyAsync(gm => gm.UserId == userId);
         }
     }
 }

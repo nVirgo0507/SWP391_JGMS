@@ -10,6 +10,7 @@ namespace BLL.DTOs.Admin
     public class CreateStudentGroupDTO
     {
         [Required]
+        [RegularExpression(@"^SE\d+$", ErrorMessage = "Group code must start with 'SE' followed by numbers (e.g. SE1234)")]
         public string GroupCode { get; set; } = null!;
 
         [Required]
