@@ -1,4 +1,5 @@
-﻿using DAL.Models;
+﻿using System.ComponentModel.DataAnnotations;
+using DAL.Models;
 
 namespace BLL.DTOs.Admin
 {
@@ -8,6 +9,7 @@ namespace BLL.DTOs.Admin
     /// </summary>
     public class UpdateStudentGroupDTO
     {
+        [RegularExpression(@"^SE\d+$", ErrorMessage = "Group code must start with 'SE' followed by numbers (e.g. SE1234)")]
         public string? GroupCode { get; set; }
         public string? GroupName { get; set; }
         public int? LecturerId { get; set; }

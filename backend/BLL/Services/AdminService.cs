@@ -344,6 +344,10 @@ namespace BLL.Services
                 {
                     throw new Exception($"User with ID {dto.LeaderId.Value} is not a student (current role: {leader.Role})");
                 }
+                if (await _memberRepository.IsStudentInAnyGroupAsync(dto.LeaderId.Value))
+                {
+                    throw new Exception($"Student '{leader.FullName}' is already a member of another group and cannot be assigned as leader");
+                }
             }
 
             // Validate initial members if provided
@@ -360,6 +364,16 @@ namespace BLL.Services
                     if (member.Role != UserRole.student)
                     {
                         throw new Exception($"User '{member.FullName}' (ID {memberId}) is not a student (current role: {member.Role})");
+                    }
+                    // Skip the leader — they'll be added separately and already checked above
+                    if (dto.LeaderId.HasValue && memberId == dto.LeaderId.Value)
+                    {
+                        validatedMemberIds.Add(memberId);
+                        continue;
+                    }
+                    if (await _memberRepository.IsStudentInAnyGroupAsync(memberId))
+                    {
+                        throw new Exception($"Student '{member.FullName}' is already a member of another group");
                     }
                     validatedMemberIds.Add(memberId);
                 }
@@ -438,14 +452,16 @@ namespace BLL.Services
             {
                 var leader = await _userRepository.GetByIdAsync(dto.LeaderId.Value);
                 if (leader == null || leader.Role != UserRole.student)
-                {
                     throw new Exception("Invalid leader ID or user is not a student");
-                }
+
+                // New leader must already be an active member of this group
+                if (!await _memberRepository.IsMemberOfGroupAsync(groupId, dto.LeaderId.Value))
+                    throw new Exception($"Student '{leader.FullName}' is not a member of this group. Add them to the group first before assigning as leader.");
 
                 var oldLeaderId = group.LeaderId;
                 group.LeaderId = dto.LeaderId.Value;
 
-                // Clear is_leader on old leader if they exist as a member
+                // Clear is_leader on old leader
                 if (oldLeaderId.HasValue && oldLeaderId.Value != dto.LeaderId.Value)
                 {
                     var oldLeaderMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, oldLeaderId.Value);
@@ -456,26 +472,12 @@ namespace BLL.Services
                     }
                 }
 
-                // Auto-add new leader as member if not already in the group
-                if (!await _memberRepository.IsMemberOfGroupAsync(groupId, dto.LeaderId.Value))
+                // Set is_leader = true on the new leader's membership row
+                var newLeaderMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, dto.LeaderId.Value);
+                if (newLeaderMember != null && newLeaderMember.IsLeader != true)
                 {
-                    await _memberRepository.AddAsync(new GroupMember
-                    {
-                        GroupId = groupId,
-                        UserId = dto.LeaderId.Value,
-                        IsLeader = true,
-                        JoinedAt = DateTime.UtcNow
-                    });
-                }
-                else
-                {
-                    // Already a member — just set is_leader = true
-                    var existingMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, dto.LeaderId.Value);
-                    if (existingMember != null && existingMember.IsLeader != true)
-                    {
-                        existingMember.IsLeader = true;
-                        await _memberRepository.UpdateAsync(existingMember);
-                    }
+                    newLeaderMember.IsLeader = true;
+                    await _memberRepository.UpdateAsync(newLeaderMember);
                 }
             }
 
@@ -510,13 +512,14 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // Check if group can be deleted (no associated project)
-            if (!await _groupRepository.CanDeleteGroupAsync(groupId))
-            {
-                throw new Exception("Cannot delete group: group has an associated project. Please delete or reassign the project first.");
-            }
+            // Remove all group members before soft-deleting
+            await _memberRepository.RemoveAllMembersAsync(groupId);
 
-            // Use soft delete
+            // Clear the leader reference
+            group.LeaderId = null;
+            await _groupRepository.UpdateAsync(group);
+
+            // Soft delete - sets status to inactive
             await _groupRepository.DeleteAsync(groupId);
         }
 
@@ -562,40 +565,72 @@ namespace BLL.Services
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
             if (group == null)
-            {
                 throw new Exception("Student group not found");
-            }
 
             var student = await _userRepository.GetByIdAsync(studentId);
             if (student == null || student.Role != UserRole.student)
-            {
                 throw new Exception("Invalid student ID or user is not a student");
-            }
 
             if (await _memberRepository.IsMemberOfGroupAsync(groupId, studentId))
+                throw new Exception("Student is already an active member of this group");
+
+            if (await _memberRepository.IsStudentInAnyGroupAsync(studentId))
+                throw new Exception($"Student '{student.FullName}' is already an active member of another group");
+
+            // Re-activate previous membership if one exists, otherwise create a new one
+            var previous = await _memberRepository.GetPreviousMembershipAsync(groupId, studentId);
+            if (previous != null)
             {
-                throw new Exception("Student is already a member of this group");
+                previous.IsLeader = group.LeaderId == studentId;
+                await _memberRepository.RejoinAsync(previous);
             }
-
-            var member = new GroupMember
+            else
             {
-                GroupId = groupId,
-                UserId = studentId,
-                IsLeader = group.LeaderId == studentId,
-                JoinedAt = DateTime.UtcNow
-            };
-
-            await _memberRepository.AddAsync(member);
+                await _memberRepository.AddAsync(new GroupMember
+                {
+                    GroupId = groupId,
+                    UserId = studentId,
+                    IsLeader = group.LeaderId == studentId,
+                    JoinedAt = DateTime.UtcNow
+                });
+            }
         }
 
         public async System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, int studentId)
         {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null)
+                throw new Exception("Student group not found");
+
             if (!await _memberRepository.IsMemberOfGroupAsync(groupId, studentId))
-            {
                 throw new Exception("Student is not a member of this group");
-            }
+
+            if (group.LeaderId == studentId)
+                throw new Exception("Cannot remove the group leader. Assign a different leader first before removing this student.");
 
             await _memberRepository.RemoveAsync(groupId, studentId);
+        }
+
+        public async System.Threading.Tasks.Task ClearGroupMembersOnCompletionAsync(int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null)
+                throw new Exception("Student group not found");
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+                throw new Exception("This group has no associated project");
+
+            if (project.Status != ProjectStatus.completed)
+                throw new Exception("Cannot clear members: the group's project is not marked as completed");
+
+            // Remove all group members
+            await _memberRepository.RemoveAllMembersAsync(groupId);
+
+            // Clear the leader reference on the group
+            group.LeaderId = null;
+            group.UpdatedAt = DateTime.UtcNow;
+            await _groupRepository.UpdateAsync(group);
         }
 
         #endregion
@@ -632,7 +667,7 @@ namespace BLL.Services
                 LeaderId = group.LeaderId,
                 LeaderName = group.Leader?.FullName,
                 Status = group.Status,
-                MemberCount = group.GroupMembers.Count,
+                MemberCount = group.GroupMembers.Count(m => m.LeftAt == null),
                 CreatedAt = group.CreatedAt,
                 UpdatedAt = group.UpdatedAt
             };
@@ -736,6 +771,10 @@ namespace BLL.Services
             var project = await _projectRepository.GetByIdAsync(projectId);
             if (project == null)
                 throw new Exception("Project not found");
+
+            var (canDelete, reason) = await _projectRepository.CanDeleteProjectAsync(projectId);
+            if (!canDelete)
+                throw new Exception(reason);
 
             await _projectRepository.DeleteAsync(projectId);
         }

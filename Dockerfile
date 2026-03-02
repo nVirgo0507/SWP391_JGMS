@@ -18,6 +18,9 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
+# Copy SQL migration files so MigrationRunner can apply them on startup
+COPY database/migrations/ ./migrations/
+
 # Port config — cloud platforms (Render) set PORT env var at runtime
 EXPOSE 8080
 ENV ASPNETCORE_ENVIRONMENT=Production

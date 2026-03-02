@@ -304,8 +304,6 @@ public partial class JgmsContext : DbContext
 
             entity.HasIndex(e => e.UserId, "idx_group_member_user");
 
-            entity.HasIndex(e => new { e.GroupId, e.UserId }, "unique_group_member").IsUnique();
-
             entity.Property(e => e.MembershipId).HasColumnName("membership_id");
             entity.Property(e => e.GroupId).HasColumnName("group_id");
             entity.Property(e => e.IsLeader)
@@ -315,6 +313,9 @@ public partial class JgmsContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("joined_at");
+            entity.Property(e => e.LeftAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("left_at");
             entity.Property(e => e.UserId).HasColumnName("user_id");
 
             entity.HasOne(d => d.Group).WithMany(p => p.GroupMembers)
