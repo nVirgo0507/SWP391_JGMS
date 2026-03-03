@@ -111,6 +111,12 @@ namespace BLL.Services.Interface
         /// </summary>
         System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, int studentId);
 
+        /// <summary>
+        /// Remove all members from a group when its project is marked as completed.
+        /// Clears the group leader as well.
+        /// </summary>
+        System.Threading.Tasks.Task ClearGroupMembersOnCompletionAsync(int groupId);
+
         #endregion
 
         #region Project Management

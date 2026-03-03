@@ -83,9 +83,13 @@ CREATE TABLE GROUP_MEMBER (
     user_id INTEGER NOT NULL REFERENCES "USER"(user_id),
     is_leader BOOLEAN DEFAULT FALSE,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT unique_group_member UNIQUE (group_id, user_id)
+    left_at TIMESTAMP DEFAULT NULL
 );
+
+-- Only one active (left_at IS NULL) membership per student per group
+CREATE UNIQUE INDEX unique_active_group_member
+    ON GROUP_MEMBER (group_id, user_id)
+    WHERE left_at IS NULL;
 
 CREATE INDEX idx_group_member_group ON GROUP_MEMBER(group_id);
 CREATE INDEX idx_group_member_user ON GROUP_MEMBER(user_id);

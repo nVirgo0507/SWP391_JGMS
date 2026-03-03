@@ -334,6 +334,23 @@ namespace SWP391_JGMS.Controllers
             }
         }
 
+        /// <summary>
+        /// Clear all members from a group. Only allowed when the group's project is marked as completed.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpDelete("groups/{groupCode}/members")]
+        public async Task<IActionResult> ClearGroupMembers(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _adminService.ClearGroupMembersOnCompletionAsync(groupId);
+                return Ok(new { message = "All members removed from group successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         #endregion
 
         #region User Integration Management (GitHub & Jira)

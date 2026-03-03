@@ -1,8 +1,7 @@
 using BLL.Services;
 using BLL.Services.Interface;
 using DAL.Data;
-using DAL.Models;
-using DAL.Repositories;
+using DAL.Models;using DAL.Repositories;
 using DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -202,6 +201,17 @@ public class Program
 		{
 			var context = scope.ServiceProvider.GetRequiredService<JgmsContext>();
 			DbInitializer.SeedAdmin(context);
+		}
+
+		// Run SQL migrations on every startup — only unapplied files are executed
+		using (var scope = app.Services.CreateScope())
+		{
+			var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+			var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
+
+			// Resolve the migrations folder relative to the app's content root
+			var migrationsFolder = Path.Combine(app.Environment.ContentRootPath, "migrations");
+			MigrationRunner.Run(connectionString, migrationsFolder, logger);
 		}
 
 		// Swagger — available in all environments for team access
