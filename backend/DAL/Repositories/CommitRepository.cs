@@ -41,5 +41,17 @@ namespace DAL.Repositories
                 .Include(c => c.User)
                 .FirstOrDefaultAsync(c => c.CommitId == commitId);
         }
+
+        public async System.Threading.Tasks.Task AddAsync(Commit commit)
+        {
+            await _context.Commits.AddAsync(commit);
+            await _context.SaveChangesAsync();
+        }
+
+        public async System.Threading.Tasks.Task AddRangeAsync(IEnumerable<Commit> commits)
+        {
+            await _context.Commits.AddRangeAsync(commits);
+            await _context.SaveChangesAsync();
+        }
     }
 }
