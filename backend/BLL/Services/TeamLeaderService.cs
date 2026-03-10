@@ -3,7 +3,9 @@ using BLL.DTOs.Jira;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
-using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Configuration;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -25,7 +27,7 @@ namespace BLL.Services
         private readonly IRequirementRepository _requirementRepository;
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
-        private readonly IDataProtector _dataProtector;
+        private readonly byte[] _encryptionKey;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
 
         public TeamLeaderService(
@@ -38,7 +40,7 @@ namespace BLL.Services
             IRequirementRepository requirementRepository,
             IJiraIntegrationRepository jiraIntegrationRepository,
             IJiraApiService jiraApiService,
-            IDataProtectionProvider dataProtectionProvider,
+            IConfiguration configuration,
             ISrsDocumentRepository srsDocumentRepository)
         {
             _memberRepository = memberRepository;
@@ -50,8 +52,10 @@ namespace BLL.Services
             _requirementRepository = requirementRepository;
             _jiraIntegrationRepository = jiraIntegrationRepository;
             _jiraApiService = jiraApiService;
-            _dataProtector = dataProtectionProvider.CreateProtector("JiraApiToken");
             _srsDocumentRepository = srsDocumentRepository;
+            // Derive the same stable AES-GCM key as JiraIntegrationService
+            var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
+            _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
         }
 
         /// <summary>
@@ -1121,8 +1125,25 @@ namespace BLL.Services
 
         private string DecryptToken(string encryptedToken)
         {
-            try { return _dataProtector.Unprotect(encryptedToken); }
-            catch { return encryptedToken; } // fallback if token was stored unencrypted
+            try
+            {
+                var data = Convert.FromBase64String(encryptedToken);
+                var nonceSize = AesGcm.NonceByteSizes.MaxSize;  // 12
+                var tagSize   = AesGcm.TagByteSizes.MaxSize;     // 16
+                var nonce      = data[..nonceSize];
+                var tag        = data[nonceSize..(nonceSize + tagSize)];
+                var ciphertext = data[(nonceSize + tagSize)..];
+                var plaintext  = new byte[ciphertext.Length];
+                using var aes = new AesGcm(_encryptionKey, AesGcm.TagByteSizes.MaxSize);
+                aes.Decrypt(nonce, ciphertext, tag, plaintext);
+                return Encoding.UTF8.GetString(plaintext);
+            }
+            catch
+            {
+                throw new Exception(
+                    "The stored Jira API token could not be decrypted. " +
+                    "Please ask an admin to reconfigure the Jira integration.");
+            }
         }
 
         private static RequirementResponseDTO MapRequirementToDTO(Requirement r) => new()

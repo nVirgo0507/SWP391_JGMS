@@ -280,6 +280,49 @@ namespace BLL.Services
 
         #endregion
 
+        #region Group Membership
+
+        /// <summary>
+        /// Returns the group the student is currently an active member of (LeftAt is null).
+        /// Returns null if the student is not in any group yet.
+        /// </summary>
+        public async Task<MyGroupDTO?> GetMyGroupAsync(int userId)
+        {
+            var memberships = await _groupMemberRepository.GetGroupsByStudentIdAsync(userId);
+
+            // Only consider active memberships (not left)
+            var activeMembership = memberships.FirstOrDefault(m => m.LeftAt == null);
+            if (activeMembership == null)
+                return null;
+
+            var group = activeMembership.Group;
+
+            return new MyGroupDTO
+            {
+                GroupId = group.GroupId,
+                GroupCode = group.GroupCode,
+                GroupName = group.GroupName,
+                IsLeader = activeMembership.IsLeader ?? false,
+                JoinedAt = activeMembership.JoinedAt,
+                LecturerName = group.Lecturer?.FullName ?? string.Empty,
+                ProjectId = group.Project?.ProjectId,
+                ProjectName = group.Project?.ProjectName,
+                Members = group.GroupMembers
+                    .Where(m => m.LeftAt == null)
+                    .Select(m => new MyGroupMemberDTO
+                    {
+                        UserId = m.UserId,
+                        FullName = m.User?.FullName ?? string.Empty,
+                        Email = m.User?.Email ?? string.Empty,
+                        IsLeader = m.IsLeader ?? false,
+                        JoinedAt = m.JoinedAt
+                    })
+                    .ToList()
+            };
+        }
+
+        #endregion
+
         #region SRS Document
 
         public async System.Threading.Tasks.Task<List<SrsDocumentDTO>> GetSrsDocumentsByProjectAsync(int projectId, int userId)

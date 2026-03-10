@@ -26,6 +26,11 @@ namespace DAL.Repositories
             return await _context.GroupMembers
                 .Include(gm => gm.Group)
                     .ThenInclude(g => g.Project)
+                .Include(gm => gm.Group)
+                    .ThenInclude(g => g.Lecturer)
+                .Include(gm => gm.Group)
+                    .ThenInclude(g => g.GroupMembers.Where(m => m.LeftAt == null))
+                        .ThenInclude(m => m.User)
                 .Where(gm => gm.UserId == userId && gm.LeftAt == null && gm.Group.Status == UserStatus.active)
                 .ToListAsync();
         }

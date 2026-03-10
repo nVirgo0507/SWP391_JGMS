@@ -2,6 +2,7 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
+using Microsoft.AspNetCore.DataProtection;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -16,11 +17,19 @@ namespace BLL.Services
     {
         private readonly IUserRepository _userRepository;
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
+        private readonly IGithubApiService _githubApiService;
+        private readonly IDataProtector _dataProtector;
 
-        public IntegrationService(IUserRepository userRepository, IGithubIntegrationRepository githubIntegrationRepository)
+        public IntegrationService(
+            IUserRepository userRepository,
+            IGithubIntegrationRepository githubIntegrationRepository,
+            IGithubApiService githubApiService,
+            IDataProtectionProvider dataProtectionProvider)
         {
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
+            _githubApiService = githubApiService;
+            _dataProtector = dataProtectionProvider.CreateProtector("GithubApiToken");
         }
 
         /// <summary>
@@ -47,6 +56,11 @@ namespace BLL.Services
             // Validating admin privileges
             await ValidateAdminAccessAsync(adminUserId);
 
+            // Validate the token and repo against the GitHub API before saving
+            await _githubApiService.ValidateConnectionAsync(dto.ApiToken, dto.RepoOwner, dto.RepoName);
+
+            var encryptedToken = _dataProtector.Protect(dto.ApiToken);
+
             var existingIntegration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
 
             if (existingIntegration == null)
@@ -54,7 +68,7 @@ namespace BLL.Services
                 var integration = new GithubIntegration
                 {
                     ProjectId = projectId,
-                    ApiToken = dto.ApiToken,
+                    ApiToken = encryptedToken,
                     RepoOwner = dto.RepoOwner,
                     RepoName = dto.RepoName,
                     RepoUrl = dto.RepoUrl,
@@ -65,7 +79,7 @@ namespace BLL.Services
             }
             else
             {
-                existingIntegration.ApiToken = dto.ApiToken;
+                existingIntegration.ApiToken = encryptedToken;
                 existingIntegration.RepoOwner = dto.RepoOwner;
                 existingIntegration.RepoName = dto.RepoName;
                 existingIntegration.RepoUrl = dto.RepoUrl;
