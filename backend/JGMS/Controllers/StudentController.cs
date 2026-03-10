@@ -540,6 +540,28 @@ namespace SWP391_JGMS.Controllers
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
+        /// <summary>
+        /// Bulk-import all synced Jira issues as requirements. Leader only.
+        /// Skips issues that are already linked to an existing requirement.
+        /// Run a Jira sync first to ensure issues are up to date.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/requirements/import-from-jira")]
+        [ProducesResponseType(typeof(BulkImportFromJiraResultDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> ImportRequirementsFromJira(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var result = await _teamLeaderService.ImportRequirementsFromJiraAsync(GetCurrentUserId(), groupId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
         #endregion
 
         // ====================================================================

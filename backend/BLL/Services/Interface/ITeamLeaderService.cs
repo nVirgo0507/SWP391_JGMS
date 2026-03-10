@@ -54,6 +54,12 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<List<RequirementResponseDTO>> ReorderRequirementsAsync(int userId, int groupId, ReorderRequirementsDTO dto);
 
+        /// <summary>
+        /// BR-055: Bulk-import all synced Jira issues that don't already have a linked requirement.
+        /// Skips issues that are already linked. Returns a summary of what was imported.
+        /// </summary>
+        Task<BulkImportFromJiraResultDTO> ImportRequirementsFromJiraAsync(int userId, int groupId);
+
         #endregion
 
         #region Tasks Management

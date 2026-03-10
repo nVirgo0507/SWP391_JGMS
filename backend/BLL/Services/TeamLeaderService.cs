@@ -61,7 +61,7 @@ namespace BLL.Services
         private async System.Threading.Tasks.Task ValidateLeaderAccessAsync(int userId, int groupId)
         {
             var groupMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, userId);
-            
+
             if (groupMember == null || !groupMember.IsLeader.GetValueOrDefault(false))
             {
                 throw new Exception("Access denied. You are not the leader of this group.");
@@ -283,7 +283,7 @@ namespace BLL.Services
 
         /// <summary>
         /// BR-055: Delete a requirement for the leader's group.
-        /// Removes the linked Jira issue from local cache (does NOT delete from Jira — 
+        /// Removes the linked Jira issue from local cache (does NOT delete from Jira —
         /// Jira issues are owned by the Jira project and managed there).
         /// </summary>
         public async System.Threading.Tasks.Task DeleteRequirementAsync(int userId, int groupId, int requirementId)
@@ -358,6 +358,97 @@ namespace BLL.Services
 
             return ordered;
         }
+
+        /// <summary>
+        /// BR-055: Bulk-import all synced Jira issues that don't already have a linked requirement.
+        /// Skips issues that are already linked. Auto-generates requirement codes (REQ-001, REQ-002, …).
+        /// </summary>
+        public async Task<BulkImportFromJiraResultDTO> ImportRequirementsFromJiraAsync(int userId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            var allIssues = await _jiraIssueRepository.GetByProjectIdAsync(project.ProjectId);
+            if (!allIssues.Any())
+                throw new Exception("No Jira issues found. Run a Jira sync first.");
+
+            var existingRequirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            var alreadyLinkedIssueIds = existingRequirements
+                .Where(r => r.JiraIssueId.HasValue)
+                .Select(r => r.JiraIssueId!.Value)
+                .ToHashSet();
+
+            // Build a starting code counter (e.g. if REQ-007 exists, next is REQ-008)
+            var existingCodes = existingRequirements
+                .Select(r => r.RequirementCode)
+                .Where(c => c.StartsWith("REQ-") && int.TryParse(c[4..], out _))
+                .Select(c => int.Parse(c[4..]))
+                .ToList();
+            var nextCodeNum = existingCodes.Any() ? existingCodes.Max() + 1 : 1;
+
+            var result = new BulkImportFromJiraResultDTO();
+
+            foreach (var issue in allIssues)
+            {
+                if (alreadyLinkedIssueIds.Contains(issue.JiraIssueId))
+                {
+                    result.Skipped++;
+                    continue;
+                }
+
+                try
+                {
+                    var code = $"REQ-{nextCodeNum:D3}";
+                    // Make sure it's unique (edge case: someone manually created a matching code)
+                    while (await _requirementRepository.ExistsByCodeAsync(project.ProjectId, code))
+                    {
+                        nextCodeNum++;
+                        code = $"REQ-{nextCodeNum:D3}";
+                    }
+
+                    var requirement = new Requirement
+                    {
+                        ProjectId = project.ProjectId,
+                        JiraIssueId = issue.JiraIssueId,
+                        RequirementCode = code,
+                        Title = issue.Summary,
+                        Description = issue.Description,
+                        RequirementType = DAL.Models.RequirementType.functional,
+                        Priority = issue.Priority.HasValue
+                            ? MapJiraPriorityToLevel(issue.Priority.Value)
+                            : PriorityLevel.medium,
+                        CreatedBy = userId
+                    };
+
+                    await _requirementRepository.AddAsync(requirement);
+
+                    var saved = await _requirementRepository.GetByIdAsync(requirement.RequirementId);
+                    result.Requirements.Add(MapRequirementToDTO(saved!));
+                    result.Imported++;
+                    nextCodeNum++;
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    result.Errors.Add($"Failed to import issue {issue.IssueKey}: {ex.Message}");
+                }
+            }
+
+            return result;
+        }
+
+        private static PriorityLevel MapJiraPriorityToLevel(JiraPriority priority) =>
+            priority switch
+            {
+                JiraPriority.highest or JiraPriority.high => PriorityLevel.high,
+                JiraPriority.low or JiraPriority.lowest => PriorityLevel.low,
+                _ => PriorityLevel.medium
+            };
 
         /// <summary>
         /// BR-055: Get all tasks for the leader's group
@@ -1219,7 +1310,7 @@ namespace BLL.Services
             }
 
             // Auto-generate introduction and scope if not provided
-            var introduction = dto.Introduction ?? 
+            var introduction = dto.Introduction ??
                 $"This Software Requirements Specification (SRS) document describes the functional and non-functional requirements for the \"{project.ProjectName}\" project. " +
                 $"It is intended to serve as a reference for the development team and stakeholders.";
 
