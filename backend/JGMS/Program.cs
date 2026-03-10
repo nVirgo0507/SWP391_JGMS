@@ -170,6 +170,8 @@ public class Program
 		builder.Services.AddScoped<IJiraIntegrationRepository, JiraIntegrationRepository>();
 		builder.Services.AddScoped<IJiraIssueRepository, JiraIssueRepository>();
 		builder.Services.AddScoped<IRequirementRepository, RequirementRepository>();
+		builder.Services.AddScoped<IGithubIntegrationRepository, GithubIntegrationRepository>();
+		builder.Services.AddScoped<IGithubCommitRepository, GithubCommitRepository>();
 
 		// Register HttpClient for Jira API
 		builder.Services.AddHttpClient();
@@ -192,6 +194,9 @@ public class Program
 		// Jira Integration services
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
+		// Github Integration services
+		builder.Services.AddScoped<IGithubApiService, GithubApiService>();
+		builder.Services.AddScoped<IGithubIntegrationService, GithubIntegrationService>();
 		// Identifier resolver — converts group codes, emails, etc. to internal IDs
 		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
 

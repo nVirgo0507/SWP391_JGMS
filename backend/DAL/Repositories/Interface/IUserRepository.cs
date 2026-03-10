@@ -10,6 +10,7 @@ namespace DAL.Repositories.Interface
 	public interface IUserRepository
 	{
 		Task<User?> GetByEmailAsync(string email);
+		Task<User?> GetByGithubUsernameAsync(string username);
 		System.Threading.Tasks.Task AddAsync(User user);
 		Task<bool> EmailExistsAsync(string email);
 		Task<bool> PhoneExistsAsync(string phone);
