@@ -273,6 +273,8 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.LastSync)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("last_sync");
+            entity.Property(e => e.SyncStatus)
+                .HasColumnName("sync_status");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
             entity.Property(e => e.RepoName)
                 .HasMaxLength(100)

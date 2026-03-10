@@ -14,65 +14,110 @@ namespace BLL.Services
         private readonly IGithubCommitRepository _githubCommitRepository;
         private readonly ICommitRepository _commitRepository;
         private readonly IUserRepository _userRepository;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
 
         public GithubIntegrationService(
             IGithubApiService githubApiService,
             IGithubCommitRepository githubCommitRepository,
             ICommitRepository commitRepository,
-            IUserRepository userRepository)
+            IUserRepository userRepository,
+            IGithubIntegrationRepository githubIntegrationRepository)
         {
             _githubApiService = githubApiService;
             _githubCommitRepository = githubCommitRepository;
             _commitRepository = commitRepository;
             _userRepository = userRepository;
+            _githubIntegrationRepository = githubIntegrationRepository;
         }
 
         public async System.Threading.Tasks.Task SyncCommitsAsync(int projectId)
         {
-            var commits = await _githubApiService.GetCommitsAsync(projectId);
+            // Mark as syncing
+            await SetSyncStatusAsync(projectId, SyncStatus.syncing);
 
-            if (commits == null || !commits.Any())
-                return;
-
-            foreach (var dto in commits)
+            try
             {
-                if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
-                    continue;
+                var commits = await _githubApiService.GetCommitsAsync(projectId);
 
-                // 1. Save to GithubCommit (raw data)
-                var githubCommit = new GithubCommit
+                if (commits == null || !commits.Any())
                 {
-                    ProjectId = projectId,
-                    CommitSha = dto.Sha,
-                    CommitMessage = dto.Message,
-                    AuthorUsername = dto.AuthorName,
-                    AuthorEmail = dto.AuthorEmail,
-                    CommitDate = dto.Date,
-                    Additions = dto.Additions,
-                    Deletions = dto.Deletions,
-                    ChangedFiles = dto.ChangedFiles
-                };
+                    await UpdateLastSyncAsync(projectId, SyncStatus.success);
+                    return;
+                }
 
-                await _githubCommitRepository.AddAsync(githubCommit);
-
-                // 2. Try to map to internal User and create base Commit
-                var user = await MapGithubAuthorToUserAsync(dto.AuthorName, dto.AuthorEmail);
-                if (user != null)
+                foreach (var dto in commits)
                 {
-                    var baseCommit = new Commit
+                    if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
+                        continue;
+
+                    // 1. Save to GithubCommit (raw data)
+                    var githubCommit = new GithubCommit
                     {
                         ProjectId = projectId,
-                        UserId = user.UserId,
-                        GithubCommitId = githubCommit.GithubCommitId,
+                        CommitSha = dto.Sha,
                         CommitMessage = dto.Message,
+                        AuthorUsername = dto.AuthorName,
+                        AuthorEmail = dto.AuthorEmail,
                         CommitDate = dto.Date,
                         Additions = dto.Additions,
                         Deletions = dto.Deletions,
-                        ChangedFiles = dto.ChangedFiles
+                        ChangedFiles = dto.ChangedFiles,
+                        LastSynced = DateTime.UtcNow
                     };
 
-                    await _commitRepository.AddAsync(baseCommit);
+                    await _githubCommitRepository.AddAsync(githubCommit);
+
+                    // 2. Try to map to internal User and create base Commit
+                    var user = await MapGithubAuthorToUserAsync(dto.AuthorName, dto.AuthorEmail);
+                    if (user != null)
+                    {
+                        var baseCommit = new Commit
+                        {
+                            ProjectId = projectId,
+                            UserId = user.UserId,
+                            GithubCommitId = githubCommit.GithubCommitId,
+                            CommitMessage = dto.Message,
+                            CommitDate = dto.Date,
+                            Additions = dto.Additions,
+                            Deletions = dto.Deletions,
+                            ChangedFiles = dto.ChangedFiles
+                        };
+
+                        await _commitRepository.AddAsync(baseCommit);
+                    }
                 }
+
+                // Mark sync as successful
+                await UpdateLastSyncAsync(projectId, SyncStatus.success);
+            }
+            catch
+            {
+                // Mark sync as failed, then re-throw
+                await SetSyncStatusAsync(projectId, SyncStatus.failed);
+                throw;
+            }
+        }
+
+        private async System.Threading.Tasks.Task SetSyncStatusAsync(int projectId, SyncStatus status)
+        {
+            var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+            if (integration != null)
+            {
+                integration.SyncStatus = status;
+                integration.UpdatedAt = DateTime.UtcNow;
+                await _githubIntegrationRepository.UpdateAsync(integration);
+            }
+        }
+
+        private async System.Threading.Tasks.Task UpdateLastSyncAsync(int projectId, SyncStatus status)
+        {
+            var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+            if (integration != null)
+            {
+                integration.LastSync = DateTime.UtcNow;
+                integration.SyncStatus = status;
+                integration.UpdatedAt = DateTime.UtcNow;
+                await _githubIntegrationRepository.UpdateAsync(integration);
             }
         }
 
