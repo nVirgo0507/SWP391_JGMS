@@ -570,6 +570,32 @@ namespace SWP391_JGMS.Controllers
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
+        /// <summary>
+        /// Configure GitHub integration for a project.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/project/integrations/github")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> ConfigureProjectGithub(string groupCode, [FromBody] GitHubIntegrationConfigDTO dto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var project = await _adminService.GetProjectByGroupIdAsync(groupId);
+                if (project == null)
+                    return NotFound(new { message = $"No project found for group '{groupCode}'" });
+
+                await _integrationService.ConfigureProjectGithubAsync(GetCurrentUserId(), project.ProjectId, dto);
+                return Ok(new { message = "GitHub integration for project configured successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         #endregion
     }
 }

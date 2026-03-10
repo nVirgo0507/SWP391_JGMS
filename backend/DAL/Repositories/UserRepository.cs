@@ -47,6 +47,11 @@ namespace DAL.Repositories
 			return await _context.Users.FirstOrDefaultAsync(x => x.Email == email);
 		}
 
+		public async Task<User?> GetByGithubUsernameAsync(string username)
+		{
+			return await _context.Users.FirstOrDefaultAsync(x => x.GithubUsername == username);
+		}
+
 		public async Task<User?> GetByIdAsync(int userId)
 		{
 			return await _context.Users.FirstOrDefaultAsync(x => x.UserId == userId);

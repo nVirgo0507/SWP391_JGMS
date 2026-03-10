@@ -402,6 +402,37 @@ namespace SWP391_JGMS.Controllers
         #endregion
 
         // ====================================================================
+        // My Group (all students)
+        // ====================================================================
+
+        #region My Group
+
+        /// <summary>
+        /// Get the group the current student belongs to.
+        /// Returns 404 if the student has not been assigned to a group yet.
+        /// Includes group details, project info, and the list of team members.
+        /// </summary>
+        [HttpGet("my-group")]
+        [ProducesResponseType(typeof(StudentDTOs.MyGroupDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetMyGroup()
+        {
+            try
+            {
+                var group = await _studentService.GetMyGroupAsync(GetCurrentUserId());
+                if (group == null)
+                    return NotFound(new { message = "You are not assigned to any group yet." });
+                return Ok(group);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        #endregion
+
+        // ====================================================================
         // Group Project & Requirements (leader-gated by service layer)
         // Accepts group code (e.g. "SE1234") or numeric group ID.
         // ====================================================================

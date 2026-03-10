@@ -14,6 +14,12 @@ namespace BLL.Services.Interface
         #region GitHub Integration
 
         /// <summary>
+        /// BR-058: Configure GitHub integration for a project
+        /// Only admin users can configure integrations
+        /// </summary>
+        Task<bool> ConfigureProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto);
+
+        /// <summary>
         /// BR-058: Configure GitHub integration for a user
         /// Only admin users can configure integrations
         /// Validates user role is admin before allowing configuration
