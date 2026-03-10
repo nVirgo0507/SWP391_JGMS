@@ -1,6 +1,7 @@
 using BLL.DTOs.Github;
 using BLL.Services.Interface;
 using DAL.Repositories.Interface;
+using Microsoft.AspNetCore.DataProtection;
 using Octokit;
 using System;
 using System.Collections.Generic;
@@ -12,10 +13,12 @@ namespace BLL.Services
     public class GithubApiService : IGithubApiService
     {
         private readonly IGithubIntegrationRepository _integrationRepository;
+        private readonly IDataProtector _dataProtector;
 
-        public GithubApiService(IGithubIntegrationRepository integrationRepository)
+        public GithubApiService(IGithubIntegrationRepository integrationRepository, IDataProtectionProvider dataProtectionProvider)
         {
             _integrationRepository = integrationRepository;
+            _dataProtector = dataProtectionProvider.CreateProtector("GithubApiToken");
         }
 
         private async Task<GitHubClient> GetClientAsync(int projectId)
@@ -26,9 +29,10 @@ namespace BLL.Services
                 throw new Exception($"GitHub integration not found or token missing for project {projectId}");
             }
 
+            var decryptedToken = _dataProtector.Unprotect(integration.ApiToken);
+
             var client = new GitHubClient(new ProductHeaderValue("JGMS"));
-            var tokenAuth = new Credentials(integration.ApiToken);
-            client.Credentials = tokenAuth;
+            client.Credentials = new Credentials(decryptedToken);
 
             return client;
         }
@@ -102,12 +106,40 @@ namespace BLL.Services
                 AuthorEmail = c.Commit.Author?.Email ?? c.Commit.Committer?.Email ?? "",
                 Date = c.Commit.Author?.Date.UtcDateTime ?? c.Commit.Committer?.Date.UtcDateTime ?? DateTime.UtcNow,
                 HtmlUrl = c.HtmlUrl,
-                // Additions and Deletions are typically 0 in the list view unless fetched individually, 
-                // but included here to match the DTO. Webhooks usually provide this data better.
                 Additions = 0,
                 Deletions = 0,
                 ChangedFiles = 0
             }).ToList();
+        }
+
+        public async Task ValidateConnectionAsync(string apiToken, string repoOwner, string repoName)
+        {
+            try
+            {
+                var client = new GitHubClient(new ProductHeaderValue("JGMS"));
+                client.Credentials = new Credentials(apiToken);
+
+                var repo = await client.Repository.Get(repoOwner, repoName);
+
+                if (repo == null)
+                    throw new Exception($"Repository '{repoOwner}/{repoName}' not found.");
+            }
+            catch (Octokit.AuthorizationException)
+            {
+                throw new Exception("Invalid GitHub API token. Please check your token and try again.");
+            }
+            catch (Octokit.NotFoundException)
+            {
+                throw new Exception($"Repository '{repoOwner}/{repoName}' does not exist or is not accessible with the provided token.");
+            }
+            catch (Octokit.RateLimitExceededException)
+            {
+                throw new Exception("GitHub API rate limit exceeded. Please try again later.");
+            }
+            catch (Exception ex) when (!(ex.Message.StartsWith("Invalid") || ex.Message.StartsWith("Repository") || ex.Message.StartsWith("GitHub")))
+            {
+                throw new Exception($"Failed to connect to GitHub: {ex.Message}");
+            }
         }
     }
 }
