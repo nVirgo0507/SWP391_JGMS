@@ -274,11 +274,26 @@ namespace SWP391_JGMS.Controllers
 
         #endregion
 
-        #region Lecturer Management
+        #region Lecturer / Student Pickers
+
+        /// <summary>
+        /// Get all active lecturers.
+        /// Use this to populate the lecturer picker when creating a group.
+        /// </summary>
+        [HttpGet("lecturers")]
+        public async Task<IActionResult> GetAllLecturers()
+        {
+            try
+            {
+                var lecturers = await _adminService.GetUsersByRoleAsync("lecturer");
+                return Ok(lecturers);
+            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
 
         /// <summary>
         /// Get all active students who are NOT currently in any group.
-        /// Use this to populate the student picker when creating or filling a group.
+        /// Use this to populate the student picker (leader + members) when creating or filling a group.
         /// </summary>
         [HttpGet("students/available")]
         public async Task<IActionResult> GetAvailableStudents()

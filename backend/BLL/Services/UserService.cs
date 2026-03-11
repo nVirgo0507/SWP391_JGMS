@@ -122,5 +122,45 @@ namespace BLL.Services
 				throw; // Re-throw if not handled
 			}
 		}
+
+		public async System.Threading.Tasks.Task RegisterLecturerAsync(RegisterLecturerDTO dto)
+		{
+			if (await _userRepository.EmailExistsAsync(dto.Email))
+				throw new Exception("Email address already exists in the system");
+
+			var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$");
+			if (!regex.IsMatch(dto.Password))
+				throw new Exception("Password must be at least 8 characters with uppercase, lowercase, and number");
+
+			var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+			if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+				throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+
+			if (await _userRepository.PhoneExistsAsync(normalizedPhone))
+				throw new Exception("Phone number already exists in the system");
+
+			var user = new User
+			{
+				Email = dto.Email,
+				FullName = dto.FullName,
+				Phone = normalizedPhone,
+				Role = UserRole.lecturer,
+				Status = UserStatus.active,
+				CreatedAt = DateTime.Now,
+				UpdatedAt = DateTime.Now
+			};
+
+			user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
+
+			try
+			{
+				await _userRepository.AddAsync(user);
+			}
+			catch (Exception ex)
+			{
+				DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
+				throw;
+			}
+		}
 	}
 }
