@@ -133,6 +133,26 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Search users by name or email (partial match, case-insensitive).
+        /// Optionally filter by role (admin, lecturer, student).
+        /// Useful for finding users without knowing their numeric ID.
+        /// Example: GET /api/admin/users/search?q=nguyen&amp;role=student
+        /// </summary>
+        [HttpGet("users/search")]
+        public async Task<IActionResult> SearchUsers([FromQuery] string q, [FromQuery] string? role = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(q))
+                    return BadRequest(new { message = "Query parameter 'q' is required." });
+
+                var users = await _adminService.SearchUsersAsync(q, role);
+                return Ok(users);
+            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
         /// Delete user. Accepts email or numeric user ID.
         /// </summary>
         [HttpDelete("users/{userIdentifier}")]
@@ -257,36 +277,17 @@ namespace SWP391_JGMS.Controllers
         #region Lecturer Management
 
         /// <summary>
-        /// Get all lecturers.
+        /// Get all active students who are NOT currently in any group.
+        /// Use this to populate the student picker when creating or filling a group.
         /// </summary>
-        [HttpGet("lecturers")]
-        public async Task<IActionResult> GetAllLecturers()
+        [HttpGet("students/available")]
+        public async Task<IActionResult> GetAvailableStudents()
         {
             try
             {
-                var lecturers = await _adminService.GetAllLecturersAsync();
-                return Ok(lecturers);
+                var students = await _adminService.GetAvailableStudentsAsync();
+                return Ok(students);
             }
-            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
-        }
-
-        /// <summary>
-        /// Assign lecturer to group.
-        /// Accepts group code (e.g. "SE1234") or numeric group ID.
-        /// </summary>
-        [HttpPut("groups/{groupCode}/lecturer")]
-        public async Task<IActionResult> AssignLecturerToGroup(string groupCode, [FromBody] AssignLecturerDTO dto)
-        {
-            try
-            {
-                if (!ModelState.IsValid)
-                    return BadRequest(ModelState);
-
-                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _adminService.AssignLecturerToGroupAsync(groupId, dto.LecturerId);
-                return Ok(new { message = "Lecturer assigned to group successfully" });
-            }
-            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
@@ -295,17 +296,29 @@ namespace SWP391_JGMS.Controllers
         #region Group Member Management
 
         /// <summary>
-        /// Add student to group.
-        /// Accepts group code (e.g. "SE1234") or numeric group ID, and student user ID.
+        /// Add one or more students to a group in a single request.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// Each student identifier can be an email address or a numeric user ID.
+        /// Returns a summary of added students and any failures (with reasons).
         /// </summary>
-        [HttpPost("groups/{groupCode}/members/{studentId}")]
-        public async Task<IActionResult> AddStudentToGroup(string groupCode, int studentId)
+        [HttpPost("groups/{groupCode}/members")]
+        public async Task<IActionResult> AddStudentsToGroup(string groupCode, [FromBody] AddStudentsToGroupDTO dto)
         {
             try
             {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _adminService.AddStudentToGroupAsync(groupId, studentId);
-                return Ok(new { message = "Student added to group successfully" });
+                var result = await _adminService.AddStudentsToGroupAsync(groupId, dto.StudentIdentifiers);
+
+                // Return 207 Multi-Status if some failed, 200 if all succeeded
+                if (result.FailureCount > 0 && result.SuccessCount == 0)
+                    return BadRequest(result);
+                if (result.FailureCount > 0)
+                    return StatusCode(207, result);
+
+                return Ok(result);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
@@ -313,25 +326,20 @@ namespace SWP391_JGMS.Controllers
 
         /// <summary>
         /// Remove student from group.
-        /// Accepts group code (e.g. "SE1234") or numeric group ID, and student user ID.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// Accepts student numeric user ID or email address.
         /// </summary>
-        [HttpDelete("groups/{groupCode}/members/{studentId}")]
-        public async Task<IActionResult> RemoveStudentFromGroup(string groupCode, int studentId)
+        [HttpDelete("groups/{groupCode}/members/{studentIdentifier}")]
+        public async Task<IActionResult> RemoveStudentFromGroup(string groupCode, string studentIdentifier)
         {
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _adminService.RemoveStudentFromGroupAsync(groupId, studentId);
+                await _adminService.RemoveStudentFromGroupAsync(groupId, studentIdentifier);
                 return Ok(new { message = "Student removed from group successfully" });
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (Exception ex)
-            {
-                var errorMessage = ex.Message;
-                if (ex.InnerException != null)
-                    errorMessage += " | Inner: " + ex.InnerException.Message;
-                return BadRequest(new { message = errorMessage });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>

@@ -54,6 +54,12 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<List<RequirementResponseDTO>> ReorderRequirementsAsync(int userId, int groupId, ReorderRequirementsDTO dto);
 
+        /// <summary>
+        /// BR-055: Bulk-import all synced Jira issues that don't already have a linked requirement.
+        /// Skips issues that are already linked. Returns a summary of what was imported.
+        /// </summary>
+        Task<BulkImportFromJiraResultDTO> ImportRequirementsFromJiraAsync(int userId, int groupId);
+
         #endregion
 
         #region Tasks Management
@@ -131,6 +137,18 @@ namespace BLL.Services.Interface
         /// Generate a downloadable HTML file of the SRS document
         /// </summary>
         Task<(byte[] content, string fileName)> DownloadSrsDocumentAsync(int userId, int groupId, int documentId);
+
+        /// <summary>
+        /// Generate a downloadable Word-compatible (.doc) file of the SRS document
+        /// </summary>
+        Task<(byte[] content, string fileName)> DownloadSrsDocumentAsDocAsync(int userId, int groupId, int documentId);
+
+        /// <summary>
+        /// Regenerate the requirement snapshot of an existing SRS document without creating a new version.
+        /// Replaces all previously included requirements with the newly selected set.
+        /// Also updates the Scope section to reflect the new requirement count.
+        /// </summary>
+        Task<SrsDocumentResponseDTO> RegenerateSrsDocumentAsync(int userId, int groupId, int documentId, RegenerateSrsDocumentDTO dto);
 
         #endregion
     }

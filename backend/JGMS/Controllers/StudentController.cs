@@ -571,6 +571,28 @@ namespace SWP391_JGMS.Controllers
             catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
         }
 
+        /// <summary>
+        /// Bulk-import all synced Jira issues as requirements. Leader only.
+        /// Skips issues that are already linked to an existing requirement.
+        /// Run a Jira sync first to ensure issues are up to date.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/requirements/import-from-jira")]
+        [ProducesResponseType(typeof(BulkImportFromJiraResultDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> ImportRequirementsFromJira(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var result = await _teamLeaderService.ImportRequirementsFromJiraAsync(GetCurrentUserId(), groupId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
         #endregion
 
         // ====================================================================
@@ -857,6 +879,50 @@ namespace SWP391_JGMS.Controllers
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
                 var (content, fileName) = await _teamLeaderService.DownloadSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
                 return File(content, "text/html", fileName);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Download the SRS document as a Word-compatible (.doc) file. Leader only.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/srs-documents/{documentId}/download/doc")]
+        [Produces("application/msword")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> DownloadGroupSrsDocumentAsDoc(string groupCode, int documentId)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var (content, fileName) = await _teamLeaderService.DownloadSrsDocumentAsDocAsync(GetCurrentUserId(), groupId, documentId);
+                return File(content, "application/msword", fileName);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Regenerate the requirements snapshot of an existing SRS document. Leader only.
+        /// Replaces all previously included requirements with a fresh selection.
+        /// Optionally auto-imports new Jira issues as requirements before regenerating.
+        /// Does NOT create a new SRS version — use the generate endpoint for that.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/srs-documents/{documentId}/regenerate")]
+        [ProducesResponseType(typeof(SrsDocumentResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> RegenerateSrsDocument(string groupCode, int documentId, [FromBody] RegenerateSrsDocumentDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var srs = await _teamLeaderService.RegenerateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
+                return Ok(srs);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }

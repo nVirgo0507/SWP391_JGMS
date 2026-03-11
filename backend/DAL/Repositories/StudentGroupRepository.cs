@@ -29,6 +29,7 @@ namespace DAL.Repositories
                 .Include(g => g.Lecturer)
                 .Include(g => g.Leader)
                 .Include(g => g.GroupMembers)
+                    .ThenInclude(gm => gm.User)
                 .FirstOrDefaultAsync(g => g.GroupId == groupId);
         }
 
@@ -38,6 +39,7 @@ namespace DAL.Repositories
                 .Include(g => g.Lecturer)
                 .Include(g => g.Leader)
                 .Include(g => g.GroupMembers)
+                    .ThenInclude(gm => gm.User)
                 .ToListAsync();
         }
 
@@ -47,6 +49,7 @@ namespace DAL.Repositories
                 .Include(g => g.Lecturer)
                 .Include(g => g.Leader)
                 .Include(g => g.GroupMembers)
+                    .ThenInclude(gm => gm.User)
                 .Where(g => g.LecturerId == lecturerId)
                 .ToListAsync();
         }

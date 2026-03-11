@@ -105,19 +105,30 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
-        /// Add a student to a group assigned to the lecturer.
+        /// Add one or more students to a group assigned to the lecturer.
         /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// Each student identifier can be an email address or a numeric user ID.
+        /// Returns a summary of added students and any failures (with reasons).
         /// </summary>
         [HttpPost("groups/{groupCode}/members")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        public async Task<IActionResult> AddStudentToGroup(string groupCode, [FromBody] AddStudentToGroupDTO dto)
+        public async Task<IActionResult> AddStudentsToGroup(string groupCode, [FromBody] AddStudentsToGroupDTO dto)
         {
             try
             {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _lecturerService.AddStudentToGroupAsync(GetCurrentUserId(), groupId, dto.StudentId);
-                return Ok(new { message = "Student added to group successfully" });
+                var result = await _lecturerService.AddStudentsToGroupAsync(GetCurrentUserId(), groupId, dto.StudentIdentifiers);
+
+                if (result.FailureCount > 0 && result.SuccessCount == 0)
+                    return BadRequest(result);
+                if (result.FailureCount > 0)
+                    return StatusCode(207, result);
+
+                return Ok(result);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
@@ -132,16 +143,17 @@ namespace SWP391_JGMS.Controllers
         /// <summary>
         /// Remove a student from a group assigned to the lecturer.
         /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// Accepts student numeric user ID or email address.
         /// </summary>
-        [HttpDelete("groups/{groupCode}/members/{studentId}")]
+        [HttpDelete("groups/{groupCode}/members/{studentIdentifier}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        public async Task<IActionResult> RemoveStudentFromGroup(string groupCode, int studentId)
+        public async Task<IActionResult> RemoveStudentFromGroup(string groupCode, string studentIdentifier)
         {
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _lecturerService.RemoveStudentFromGroupAsync(GetCurrentUserId(), groupId, studentId);
+                await _lecturerService.RemoveStudentFromGroupAsync(GetCurrentUserId(), groupId, studentIdentifier);
                 return Ok(new { message = "Student removed from group successfully" });
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }

@@ -40,6 +40,18 @@ namespace BLL.Services.Interface
         Task<List<UserResponseDTO>> GetUsersByRoleAsync(string role);
 
         /// <summary>
+        /// Search users by name or email, optionally filtered by role.
+        /// Returns matching users ordered by name.
+        /// </summary>
+        Task<List<UserResponseDTO>> SearchUsersAsync(string query, string? role = null);
+
+        /// <summary>
+        /// Returns all active students who are not currently a member of any group.
+        /// Use this to populate the student picker when creating or filling a group.
+        /// </summary>
+        Task<List<UserResponseDTO>> GetAvailableStudentsAsync();
+
+        /// <summary>
         /// BR-059: Cascade Delete Prevention - Delete user with validation
         /// Cannot delete if user has associated data
         /// </summary>
@@ -83,33 +95,20 @@ namespace BLL.Services.Interface
 
         #endregion
 
-        #region Lecturer Management
-
-        /// <summary>
-        /// BR-053: Get all lecturers in the system
-        /// </summary>
-        Task<List<UserResponseDTO>> GetAllLecturersAsync();
-
-        /// <summary>
-        /// BR-053: Assign a lecturer to a group
-        /// BR-007: Validates lecturer is not inactive
-        /// </summary>
-        System.Threading.Tasks.Task AssignLecturerToGroupAsync(int groupId, int lecturerId);
-
-        #endregion
-
         #region Group Member Management
 
         /// <summary>
-        /// BR-053: Add a student to a group
-        /// Validates student is not already a member
+        /// Add multiple students to a group in one call.
+        /// Each identifier can be an email address or a numeric user ID.
+        /// Returns a summary of successes and failures.
         /// </summary>
-        System.Threading.Tasks.Task AddStudentToGroupAsync(int groupId, int studentId);
+        Task<BulkAddResult> AddStudentsToGroupAsync(int groupId, List<string> studentIdentifiers);
 
         /// <summary>
-        /// BR-053: Remove a student from a group
+        /// BR-053: Remove a student from a group.
+        /// Accepts numeric student ID or email address.
         /// </summary>
-        System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, int studentId);
+        System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, string studentIdentifier);
 
         /// <summary>
         /// Remove all members from a group when its project is marked as completed.
