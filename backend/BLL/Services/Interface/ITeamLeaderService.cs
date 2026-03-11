@@ -138,6 +138,18 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<(byte[] content, string fileName)> DownloadSrsDocumentAsync(int userId, int groupId, int documentId);
 
+        /// <summary>
+        /// Generate a downloadable Word-compatible (.doc) file of the SRS document
+        /// </summary>
+        Task<(byte[] content, string fileName)> DownloadSrsDocumentAsDocAsync(int userId, int groupId, int documentId);
+
+        /// <summary>
+        /// Regenerate the requirement snapshot of an existing SRS document without creating a new version.
+        /// Replaces all previously included requirements with the newly selected set.
+        /// Also updates the Scope section to reflect the new requirement count.
+        /// </summary>
+        Task<SrsDocumentResponseDTO> RegenerateSrsDocumentAsync(int userId, int groupId, int documentId, RegenerateSrsDocumentDTO dto);
+
         #endregion
     }
 }
