@@ -1,7 +1,6 @@
 using BLL.DTOs.Github;
 using BLL.Services.Interface;
 using DAL.Repositories.Interface;
-using Microsoft.AspNetCore.DataProtection;
 using Octokit;
 using System;
 using System.Collections.Generic;
@@ -13,12 +12,12 @@ namespace BLL.Services
     public class GithubApiService : IGithubApiService
     {
         private readonly IGithubIntegrationRepository _integrationRepository;
-        private readonly IDataProtector _dataProtector;
+        private readonly ITokenEncryptionService _tokenEncryption;
 
-        public GithubApiService(IGithubIntegrationRepository integrationRepository, IDataProtectionProvider dataProtectionProvider)
+        public GithubApiService(IGithubIntegrationRepository integrationRepository, ITokenEncryptionService tokenEncryptionService)
         {
             _integrationRepository = integrationRepository;
-            _dataProtector = dataProtectionProvider.CreateProtector("GithubApiToken");
+            _tokenEncryption = tokenEncryptionService;
         }
 
         private async Task<GitHubClient> GetClientAsync(int projectId)
@@ -29,7 +28,7 @@ namespace BLL.Services
                 throw new Exception($"GitHub integration not found or token missing for project {projectId}");
             }
 
-            var decryptedToken = _dataProtector.Unprotect(integration.ApiToken);
+            var decryptedToken = _tokenEncryption.Decrypt(integration.ApiToken);
 
             var client = new GitHubClient(new ProductHeaderValue("JGMS"));
             client.Credentials = new Credentials(decryptedToken);

@@ -176,8 +176,8 @@ public class Program
 		// Register HttpClient for Jira API
 		builder.Services.AddHttpClient();
 
-		// Register Data Protection for encrypting API tokens
-		builder.Services.AddDataProtection();
+		// Register token encryption service (AES-256 with a fixed key — survives restarts)
+		builder.Services.AddSingleton<BLL.Services.Interface.ITokenEncryptionService, BLL.Services.TokenEncryptionService>();
 
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();

@@ -2,7 +2,6 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
-using Microsoft.AspNetCore.DataProtection;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -18,18 +17,18 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
         private readonly IGithubApiService _githubApiService;
-        private readonly IDataProtector _dataProtector;
+        private readonly ITokenEncryptionService _tokenEncryption;
 
         public IntegrationService(
             IUserRepository userRepository,
             IGithubIntegrationRepository githubIntegrationRepository,
             IGithubApiService githubApiService,
-            IDataProtectionProvider dataProtectionProvider)
+            ITokenEncryptionService tokenEncryptionService)
         {
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
             _githubApiService = githubApiService;
-            _dataProtector = dataProtectionProvider.CreateProtector("GithubApiToken");
+            _tokenEncryption = tokenEncryptionService;
         }
 
         /// <summary>
@@ -59,7 +58,7 @@ namespace BLL.Services
             // Validate the token and repo against the GitHub API before saving
             await _githubApiService.ValidateConnectionAsync(dto.ApiToken, dto.RepoOwner, dto.RepoName);
 
-            var encryptedToken = _dataProtector.Protect(dto.ApiToken);
+            var encryptedToken = _tokenEncryption.Encrypt(dto.ApiToken);
 
             var existingIntegration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
 
