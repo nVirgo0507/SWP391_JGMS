@@ -98,19 +98,28 @@ namespace BLL.Services
 
             var commits = await client.Repository.Commit.GetAll(owner, repo);
 
-            return commits.Select(c => new GithubCommitDto
-            {
-                Sha = c.Sha,
-                Message = c.Commit.Message,
-                AuthorName = c.Commit.Author?.Name ?? c.Commit.Committer?.Name ?? c.Author?.Login ?? "Unknown",
-                AuthorEmail = c.Commit.Author?.Email ?? c.Commit.Committer?.Email ?? "",
-                Date = c.Commit.Author?.Date.UtcDateTime ?? c.Commit.Committer?.Date.UtcDateTime ?? DateTime.UtcNow,
-                HtmlUrl = c.HtmlUrl,
-                Additions = 0,
-                Deletions = 0,
-                ChangedFiles = 0
-            }).ToList();
-        }
+			var result = new List<GithubCommitDto>();
+
+			foreach (var c in commits)
+			{
+				var detail = await client.Repository.Commit.Get(owner, repo, c.Sha);
+
+				result.Add(new GithubCommitDto
+				{
+					Sha = c.Sha,
+					Message = c.Commit.Message,
+					AuthorName = c.Commit.Author?.Name ?? c.Commit.Committer?.Name ?? c.Author?.Login ?? "Unknown",
+					AuthorEmail = c.Commit.Author?.Email ?? c.Commit.Committer?.Email ?? "",
+					Date = c.Commit.Author?.Date.UtcDateTime ?? c.Commit.Committer?.Date.UtcDateTime ?? DateTime.UtcNow,
+					HtmlUrl = c.HtmlUrl,
+
+					Additions = detail.Stats?.Additions ?? 0,
+					Deletions = detail.Stats?.Deletions ?? 0,
+					ChangedFiles = detail.Files?.Count ?? 0
+				});
+			}
+			return result;
+		}
 
         public async Task ValidateConnectionAsync(string apiToken, string repoOwner, string repoName)
         {
