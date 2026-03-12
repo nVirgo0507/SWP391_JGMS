@@ -20,6 +20,7 @@ namespace DAL.Repositories
                 .Include(s => s.Project)
                 .Include(s => s.SrsIncludedRequirements)
                     .ThenInclude(r => r.Requirement)
+                    .ThenInclude(req => req.JiraIssue)
                 .Where(s => s.ProjectId == projectId)
                 .OrderByDescending(s => s.GeneratedAt)
                 .ToListAsync();
@@ -32,6 +33,7 @@ namespace DAL.Repositories
                 .Include(s => s.Project)
                 .Include(s => s.SrsIncludedRequirements)
                     .ThenInclude(r => r.Requirement)
+                    .ThenInclude(req => req.JiraIssue)
                 .FirstOrDefaultAsync(s => s.DocumentId == documentId);
         }
 
@@ -45,6 +47,12 @@ namespace DAL.Repositories
                 .ToListAsync();
         }
 
+        public async System.Threading.Tasks.Task<bool> ExistsByVersionAsync(int projectId, string version)
+        {
+            return await _context.SrsDocuments
+                .AnyAsync(s => s.ProjectId == projectId && s.Version == version);
+        }
+
         public async System.Threading.Tasks.Task AddAsync(SrsDocument document)
         {
             _context.SrsDocuments.Add(document);
@@ -54,6 +62,15 @@ namespace DAL.Repositories
         public async System.Threading.Tasks.Task UpdateAsync(SrsDocument document)
         {
             _context.SrsDocuments.Update(document);
+            await _context.SaveChangesAsync();
+        }
+
+        public async System.Threading.Tasks.Task RemoveIncludedRequirementsAsync(int documentId)
+        {
+            var existing = await _context.SrsIncludedRequirements
+                .Where(r => r.DocumentId == documentId)
+                .ToListAsync();
+            _context.SrsIncludedRequirements.RemoveRange(existing);
             await _context.SaveChangesAsync();
         }
     }

@@ -8,7 +8,10 @@ namespace BLL.DTOs.Admin
     /// </summary>
     public class AssignLecturerDTO
     {
+        /// <summary>
+        /// Lecturer identifier — accepts either a numeric user ID (e.g. "5") or an email address (e.g. "lecturer@fpt.edu.vn").
+        /// </summary>
         [Required]
-        public int LecturerId { get; set; }
+        public string LecturerId { get; set; } = null!;
     }
 }

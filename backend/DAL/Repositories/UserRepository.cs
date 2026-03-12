@@ -67,6 +67,33 @@ namespace DAL.Repositories
 			return await _context.Users.Where(x => x.Role == role).ToListAsync();
 		}
 
+		public async Task<List<User>> SearchByNameOrEmailAsync(string query, UserRole? role = null)
+		{
+			var q = query.ToLower();
+			var results = _context.Users
+				.Where(u => u.FullName.ToLower().Contains(q) || u.Email.ToLower().Contains(q));
+			if (role.HasValue)
+				results = results.Where(u => u.Role == role.Value);
+			return await results.OrderBy(u => u.FullName).ToListAsync();
+		}
+
+		public async Task<List<User>> GetAvailableStudentsAsync()
+		{
+			// Students with role=student, status=active, and no active (LeftAt == null) group membership
+			var occupiedStudentIds = await _context.GroupMembers
+				.Where(gm => gm.LeftAt == null)
+				.Select(gm => gm.UserId)
+				.Distinct()
+				.ToListAsync();
+
+			return await _context.Users
+				.Where(u => u.Role == UserRole.student
+						 && u.Status == UserStatus.active
+						 && !occupiedStudentIds.Contains(u.UserId))
+				.OrderBy(u => u.FullName)
+				.ToListAsync();
+		}
+
 		public async System.Threading.Tasks.Task UpdateAsync(User user)
 		{
 			user.UpdatedAt = DateTime.UtcNow;

@@ -15,6 +15,9 @@ namespace SWP391_JGMS.Controllers
 			_userService = userService;
 		}
 
+		/// <summary>
+		/// Register a new student account.
+		/// </summary>
 		[HttpPost("register")]
 		public async Task<IActionResult> Register([FromBody]RegisterDTO dto)
 		{
@@ -32,6 +35,30 @@ namespace SWP391_JGMS.Controllers
 			}
 		}
 
+		/// <summary>
+		/// Register a new lecturer account.
+		/// Does not require student code, GitHub username, or Jira account ID.
+		/// </summary>
+		[HttpPost("register/lecturer")]
+		public async Task<IActionResult> RegisterLecturer([FromBody] RegisterLecturerDTO dto)
+		{
+			try
+			{
+				if (!ModelState.IsValid)
+					return BadRequest(ModelState);
+
+				await _userService.RegisterLecturerAsync(dto);
+				return Ok(new { message = "Lecturer registered successfully" });
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
+		}
+
+		/// <summary>
+		/// Login with email and password. Returns a JWT access token.
+		/// </summary>
 		[HttpPost("login")]
 		public async Task<IActionResult> Login([FromBody] LoginDTO dto)
 		{

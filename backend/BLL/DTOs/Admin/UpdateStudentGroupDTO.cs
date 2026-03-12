@@ -12,8 +12,17 @@ namespace BLL.DTOs.Admin
         [RegularExpression(@"^SE\d+$", ErrorMessage = "Group code must start with 'SE' followed by numbers (e.g. SE1234)")]
         public string? GroupCode { get; set; }
         public string? GroupName { get; set; }
-        public int? LecturerId { get; set; }
-        public int? LeaderId { get; set; }
+
+        /// <summary>
+        /// Lecturer identifier — accepts either a numeric user ID or an email address. Optional.
+        /// </summary>
+        public string? LecturerId { get; set; }
+
+        /// <summary>
+        /// Leader identifier — accepts either a numeric user ID or an email address. Optional.
+        /// </summary>
+        public string? LeaderId { get; set; }
+
         public UserStatus? Status { get; set; }
     }
 }

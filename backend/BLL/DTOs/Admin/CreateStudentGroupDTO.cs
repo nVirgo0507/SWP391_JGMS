@@ -16,15 +16,21 @@ namespace BLL.DTOs.Admin
         [Required]
         public string GroupName { get; set; } = null!;
 
+        /// <summary>
+        /// Lecturer identifier — accepts either a numeric user ID (e.g. "5") or an email address (e.g. "lecturer@fpt.edu.vn").
+        /// </summary>
         [Required]
-        public int LecturerId { get; set; }
-
-        public int? LeaderId { get; set; }
+        public string LecturerId { get; set; } = null!;
 
         /// <summary>
-        /// Optional list of student user IDs to add as initial group members.
+        /// Leader identifier — accepts either a numeric user ID or an email address. Optional.
+        /// </summary>
+        public string? LeaderId { get; set; }
+
+        /// <summary>
+        /// Optional list of student identifiers (numeric ID or email) for initial group members.
         /// The leader (if specified) is added automatically — no need to include them here.
         /// </summary>
-        public List<int>? MemberIds { get; set; }
+        public List<string>? MemberIds { get; set; }
     }
 }

@@ -11,10 +11,14 @@ namespace BLL.Services.Interface
 
         Task<List<GroupMemberResponseDTO>> GetGroupMembersAsync(int lecturerId, int groupId);
 
-        Task AddStudentToGroupAsync(int lecturerId, int groupId, int studentId);
+        /// <summary>Add multiple students by email or numeric ID in one call.</summary>
+        Task<BulkAddResult> AddStudentsToGroupAsync(int lecturerId, int groupId, List<string> studentIdentifiers);
 
-        Task RemoveStudentFromGroupAsync(int lecturerId, int groupId, int studentId);
+        /// <summary>Remove a student by email or numeric ID.</summary>
+        Task RemoveStudentFromGroupAsync(int lecturerId, int groupId, string studentIdentifier);
 
         Task<StudentGroupResponseDTO> UpdateGroupAsync(int lecturerId, int groupId, UpdateStudentGroupDTO dto);
     }
 }
+
+

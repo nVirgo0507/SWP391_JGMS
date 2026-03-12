@@ -651,6 +651,10 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Introduction).HasColumnName("introduction");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
             entity.Property(e => e.Scope).HasColumnName("scope");
+            entity.Property(e => e.ProductPerspective).HasColumnName("product_perspective");
+            entity.Property(e => e.UserClasses).HasColumnName("user_classes");
+            entity.Property(e => e.OperatingEnvironment).HasColumnName("operating_environment");
+            entity.Property(e => e.AssumptionsDependencies).HasColumnName("assumptions_dependencies");
             entity.Property(e => e.Status)
                 .HasDefaultValue(DocumentStatus.draft)
                 .HasColumnName("status");

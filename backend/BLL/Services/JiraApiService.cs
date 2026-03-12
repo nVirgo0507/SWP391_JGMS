@@ -1,4 +1,4 @@
-﻿﻿using BLL.DTOs.Jira;
+﻿using BLL.DTOs.Jira;
 using BLL.Services.Interface;
 using System.Net.Http.Headers;
 using System.Text;
@@ -7,17 +7,17 @@ using System.Text.Json;
 namespace BLL.Services
 {
     /// <summary>
-    /// Implementation of Jira REST API v3 client using HttpClient
-    /// Documentation: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+    /// Jira REST API v3 client.
+    /// Automatically tries Basic Auth first, then falls back to Bearer token if the
+    /// Atlassian org has restricted Basic Auth for SSO/Google accounts
+    /// (detected via WWW-Authenticate: OAuth response header).
     /// </summary>
     public class JiraApiService : IJiraApiService
     {
-        private readonly IHttpClientFactory _httpClientFactory;
         private readonly JsonSerializerOptions _jsonOptions;
 
-        public JiraApiService(IHttpClientFactory httpClientFactory)
+        public JiraApiService()
         {
-            _httpClientFactory = httpClientFactory;
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -25,51 +25,135 @@ namespace BLL.Services
             };
         }
 
-        /// <summary>
-        /// Create HTTP client with Basic Auth headers
-        /// </summary>
-        private HttpClient CreateAuthenticatedClient(string jiraUrl, string email, string apiToken)
+        // ── HTTP plumbing ────────────────────────────────────────────────────────────
+
+        private static HttpClient CreateClient(string email, string apiToken, bool useBearer)
         {
-            var client = _httpClientFactory.CreateClient();
-            client.BaseAddress = new Uri(jiraUrl.TrimEnd('/'));
+            email = email.Trim();
+            apiToken = apiToken.Trim();
 
-            // Basic Authentication: base64(email:apiToken)
-            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{email}:{apiToken}"));
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            var handler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseCookies = false,
+                PooledConnectionLifetime = TimeSpan.FromSeconds(30)
+            };
+            var client = new HttpClient(handler, disposeHandler: true);
 
+            if (useBearer)
+            {
+                // Bearer mode: works even when org-level policy blocks Basic Auth for SSO accounts
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", apiToken);
+            }
+            else
+            {
+                var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{email}:{apiToken}"));
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Basic", b64);
+            }
+
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/json"));
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("JGMS/1.0");
             return client;
         }
+
+        private static async Task<HttpResponseMessage> SendAsync(
+            HttpClient client, HttpMethod method, string url, HttpContent? content = null)
+        {
+            const int maxRedirects = 10;
+            for (int i = 0; i <= maxRedirects; i++)
+            {
+                var req = new HttpRequestMessage(method, url);
+                if (content != null && (method == HttpMethod.Post || method == HttpMethod.Put))
+                    req.Content = content;
+
+                var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+
+                if ((resp.StatusCode == System.Net.HttpStatusCode.MovedPermanently ||
+                     resp.StatusCode == System.Net.HttpStatusCode.Found ||
+                     resp.StatusCode == System.Net.HttpStatusCode.TemporaryRedirect ||
+                     resp.StatusCode == System.Net.HttpStatusCode.PermanentRedirect) &&
+                    resp.Headers.Location != null)
+                {
+                    var loc = resp.Headers.Location;
+                    url = loc.IsAbsoluteUri ? loc.AbsoluteUri : new Uri(new Uri(url), loc).AbsoluteUri;
+                    if ((resp.StatusCode == System.Net.HttpStatusCode.MovedPermanently ||
+                         resp.StatusCode == System.Net.HttpStatusCode.Found) &&
+                        method == HttpMethod.Post)
+                    {
+                        method = HttpMethod.Get;
+                        content = null;
+                    }
+                    resp.Dispose();
+                    continue;
+                }
+
+                await resp.Content.LoadIntoBufferAsync();
+                return resp;
+            }
+            throw new Exception($"Too many redirects calling Jira: {url}");
+        }
+
+        /// <summary>
+        /// Tries Basic Auth. If Atlassian signals OAuth-only via WWW-Authenticate: OAuth,
+        /// automatically retries with Bearer token (API tokens work as Bearer on Atlassian Cloud).
+        /// </summary>
+        private static async Task<HttpResponseMessage> SendWithFallbackAsync(
+            HttpMethod method, string url, string email, string apiToken,
+            HttpContent? content = null)
+        {
+            using var basicClient = CreateClient(email, apiToken, useBearer: false);
+            var resp = await SendAsync(basicClient, method, url, content);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                resp.Headers.TryGetValues("WWW-Authenticate", out var wwwAuth) &&
+                wwwAuth.Any(v => v.StartsWith("OAuth", StringComparison.OrdinalIgnoreCase)))
+            {
+                resp.Dispose();
+                using var bearerClient = CreateClient(email, apiToken, useBearer: true);
+                return await SendAsync(bearerClient, method, url, content);
+            }
+
+            return resp;
+        }
+
+        // ── Public Methods ───────────────────────────────────────────────────────────
 
         public async Task<bool> TestConnectionAsync(string jiraUrl, string email, string apiToken)
         {
             try
             {
-                var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-                var response = await client.GetAsync("/rest/api/3/myself");
-                return response.IsSuccessStatusCode;
+                var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/myself";
+                var resp = await SendWithFallbackAsync(HttpMethod.Get, url, email, apiToken);
+                if (resp.IsSuccessStatusCode) return true;
+
+                var body = await resp.Content.ReadAsStringAsync();
+                resp.Headers.TryGetValues("X-Seraph-LoginReason", out var lr);
+                var reason = lr != null ? string.Join(",", lr) : $"{(int)resp.StatusCode}";
+                throw new Exception(
+                    $"Jira authentication failed ({reason}). " +
+                    $"Verify your email and API token at " +
+                    $"https://id.atlassian.com/manage-profile/security/api-tokens. " +
+                    $"Response: {body}");
             }
-            catch
+            catch (Exception ex) when (!ex.Message.StartsWith("Jira authentication") &&
+                                       !ex.Message.StartsWith("Could not reach"))
             {
-                return false;
+                throw new Exception($"Could not reach Jira at '{jiraUrl}': {ex.Message}");
             }
         }
 
-        public async Task<JiraProjectDTO> GetProjectAsync(string jiraUrl, string email, string apiToken, string projectKey)
+        public async Task<JiraProjectDTO> GetProjectAsync(
+            string jiraUrl, string email, string apiToken, string projectKey)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var response = await client.GetAsync($"/rest/api/3/project/{projectKey}");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/project/{projectKey}";
+            var resp = await SendWithFallbackAsync(HttpMethod.Get, url, email, apiToken);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to get Jira project: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to get Jira project: {response.StatusCode} - {error}");
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonDoc = JsonDocument.Parse(content);
-            var root = jsonDoc.RootElement;
-
+            var root = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
             return new JiraProjectDTO
             {
                 Id = root.GetProperty("id").GetString() ?? "",
@@ -80,183 +164,106 @@ namespace BLL.Services
             };
         }
 
-        public async Task<List<JiraIssueDTO>> GetProjectIssuesAsync(string jiraUrl, string email, string apiToken, string projectKey)
+        public async Task<List<JiraIssueDTO>> GetProjectIssuesAsync(
+            string jiraUrl, string email, string apiToken, string projectKey)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-
-            // Use the new /rest/api/3/search/jql endpoint (POST) as the old /rest/api/3/search (GET) has been removed
-            // See: https://developer.atlassian.com/changelog/#CHANGE-2046
-            var jql = $"project={projectKey} ORDER BY updated DESC";
             var requestBody = new
             {
-                jql = jql,
+                jql = $"project={projectKey} ORDER BY updated DESC",
                 maxResults = 1000,
-                fields = new[] { "summary", "description", "status", "issuetype", "priority", "assignee", "created", "updated" }
+                fields = new[] { "summary", "description", "status", "issuetype",
+                                  "priority", "assignee", "created", "updated" }
             };
+            var httpContent = new StringContent(
+                JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/search/jql";
+            var resp = await SendWithFallbackAsync(HttpMethod.Post, url, email, apiToken, httpContent);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to get Jira issues: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
 
-            var jsonBody = JsonSerializer.Serialize(requestBody);
-            var httpContent = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-            var response = await client.PostAsync("/rest/api/3/search/jql", httpContent);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to get Jira issues: {response.StatusCode} - {error}");
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonDoc = JsonDocument.Parse(content);
+            var root = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
             var issues = new List<JiraIssueDTO>();
-
-            if (jsonDoc.RootElement.TryGetProperty("issues", out var issuesArray))
-            {
-                foreach (var issue in issuesArray.EnumerateArray())
-                {
+            if (root.TryGetProperty("issues", out var arr))
+                foreach (var issue in arr.EnumerateArray())
                     issues.Add(ParseJiraIssue(issue));
-                }
-            }
-
             return issues;
         }
 
-        public async Task<JiraIssueDTO> GetIssueAsync(string jiraUrl, string email, string apiToken, string issueKey)
+        public async Task<JiraIssueDTO> GetIssueAsync(
+            string jiraUrl, string email, string apiToken, string issueKey)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var response = await client.GetAsync($"/rest/api/3/issue/{issueKey}");
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to get Jira issue: {response.StatusCode} - {error}");
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonDoc = JsonDocument.Parse(content);
-            return ParseJiraIssue(jsonDoc.RootElement);
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issue/{issueKey}";
+            var resp = await SendWithFallbackAsync(HttpMethod.Get, url, email, apiToken);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to get Jira issue: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
+            return ParseJiraIssue(JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement);
         }
 
-        public async Task<JiraIssueDTO> CreateIssueAsync(string jiraUrl, string email, string apiToken, CreateJiraIssueDTO dto)
+        public async Task<JiraIssueDTO> CreateIssueAsync(
+            string jiraUrl, string email, string apiToken, CreateJiraIssueDTO dto)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-
-            // Build fields conditionally — never send null values to Jira
             var fields = new Dictionary<string, object>
             {
                 ["project"] = new { key = dto.ProjectKey },
                 ["summary"] = dto.Summary,
                 ["issuetype"] = new { name = dto.IssueType }
             };
-
             if (!string.IsNullOrEmpty(dto.Description))
-            {
-                fields["description"] = new
-                {
-                    type = "doc",
-                    version = 1,
-                    content = new[]
-                    {
-                        new
-                        {
-                            type = "paragraph",
-                            content = new[] { new { type = "text", text = dto.Description } }
-                        }
-                    }
-                };
-            }
-
+                fields["description"] = BuildAdf(dto.Description);
             if (!string.IsNullOrEmpty(dto.Priority))
                 fields["priority"] = new { name = dto.Priority };
-
             if (!string.IsNullOrEmpty(dto.AssigneeAccountId))
                 fields["assignee"] = new { accountId = dto.AssigneeAccountId };
 
-            var payload = new { fields };
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { fields }, _jsonOptions), Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issue";
+            var resp = await SendWithFallbackAsync(HttpMethod.Post, url, email, apiToken, body);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to create Jira issue: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
 
-            var response = await client.PostAsync("/rest/api/3/issue", content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to create Jira issue: {response.StatusCode} - {error}");
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-            var jsonDoc = JsonDocument.Parse(responseContent);
-            var issueKey = jsonDoc.RootElement.GetProperty("key").GetString() ?? "";
-
+            var issueKey = JsonDocument.Parse(await resp.Content.ReadAsStringAsync())
+                .RootElement.GetProperty("key").GetString() ?? "";
             return await GetIssueAsync(jiraUrl, email, apiToken, issueKey);
         }
 
-        public async Task<JiraIssueDTO> UpdateIssueAsync(string jiraUrl, string email, string apiToken, string issueKey, UpdateJiraIssueDTO dto)
+        public async Task<JiraIssueDTO> UpdateIssueAsync(
+            string jiraUrl, string email, string apiToken, string issueKey, UpdateJiraIssueDTO dto)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-
             var fields = new Dictionary<string, object?>();
             if (dto.Summary != null) fields["summary"] = dto.Summary;
-            if (dto.Description != null)
-            {
-                fields["description"] = new
-                {
-                    type = "doc",
-                    version = 1,
-                    content = new[]
-                    {
-                        new
-                        {
-                            type = "paragraph",
-                            content = new[]
-                            {
-                                new { type = "text", text = dto.Description }
-                            }
-                        }
-                    }
-                };
-            }
+            if (dto.Description != null) fields["description"] = BuildAdf(dto.Description);
             if (dto.Priority != null) fields["priority"] = new { name = dto.Priority };
             if (dto.AssigneeAccountId != null) fields["assignee"] = new { accountId = dto.AssigneeAccountId };
 
-            var payload = new { fields };
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { fields }, _jsonOptions), Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issue/{issueKey}";
+            var resp = await SendWithFallbackAsync(HttpMethod.Put, url, email, apiToken, body);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to update Jira issue: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
 
-            var response = await client.PutAsync($"/rest/api/3/issue/{issueKey}", content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to update Jira issue: {response.StatusCode} - {error}");
-            }
-
-            // Get updated issue
             return await GetIssueAsync(jiraUrl, email, apiToken, issueKey);
         }
 
-        public async Task<List<JiraTransitionDTO>> GetAvailableTransitionsAsync(string jiraUrl, string email, string apiToken, string issueKey)
+        public async Task<List<JiraTransitionDTO>> GetAvailableTransitionsAsync(
+            string jiraUrl, string email, string apiToken, string issueKey)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var response = await client.GetAsync($"/rest/api/3/issue/{issueKey}/transitions");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issue/{issueKey}/transitions";
+            var resp = await SendWithFallbackAsync(HttpMethod.Get, url, email, apiToken);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to get transitions: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to get transitions: {response.StatusCode} - {error}");
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonDoc = JsonDocument.Parse(content);
+            var root = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
             var transitions = new List<JiraTransitionDTO>();
-
-            if (jsonDoc.RootElement.TryGetProperty("transitions", out var transitionsArray))
-            {
-                foreach (var transition in transitionsArray.EnumerateArray())
+            if (root.TryGetProperty("transitions", out var arr))
+                foreach (var t in arr.EnumerateArray())
                 {
-                    var to = transition.GetProperty("to");
+                    var to = t.GetProperty("to");
                     transitions.Add(new JiraTransitionDTO
                     {
-                        Id = transition.GetProperty("id").GetString() ?? "",
-                        Name = transition.GetProperty("name").GetString() ?? "",
+                        Id = t.GetProperty("id").GetString() ?? "",
+                        Name = t.GetProperty("name").GetString() ?? "",
                         To = new JiraStatusDTO
                         {
                             Id = to.GetProperty("id").GetString() ?? "",
@@ -264,58 +271,97 @@ namespace BLL.Services
                         }
                     });
                 }
-            }
-
             return transitions;
         }
 
-        public async Task TransitionIssueAsync(string jiraUrl, string email, string apiToken, string issueKey, string transitionId)
+        public async Task TransitionIssueAsync(
+            string jiraUrl, string email, string apiToken, string issueKey, string transitionId)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-
-            var payload = new
-            {
-                transition = new { id = transitionId }
-            };
-
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await client.PostAsync($"/rest/api/3/issue/{issueKey}/transitions", content);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to transition issue: {response.StatusCode} - {error}");
-            }
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { transition = new { id = transitionId } }, _jsonOptions),
+                Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issue/{issueKey}/transitions";
+            var resp = await SendWithFallbackAsync(HttpMethod.Post, url, email, apiToken, body);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to transition issue: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
         }
 
-        public async Task<string?> SearchUserAsync(string jiraUrl, string email, string apiToken, string searchTerm)
+        public async Task<string?> SearchUserAsync(
+            string jiraUrl, string email, string apiToken, string searchTerm)
         {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var encodedQuery = Uri.EscapeDataString(searchTerm);
-            var response = await client.GetAsync($"/rest/api/3/user/search?query={encodedQuery}");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/user/search?query={Uri.EscapeDataString(searchTerm)}";
+            var resp = await SendWithFallbackAsync(HttpMethod.Get, url, email, apiToken);
+            if (!resp.IsSuccessStatusCode) return null;
 
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonDoc = JsonDocument.Parse(content);
-
-            if (jsonDoc.RootElement.GetArrayLength() > 0)
-            {
-                var firstUser = jsonDoc.RootElement[0];
-                return firstUser.GetProperty("accountId").GetString();
-            }
-
+            var root = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+            if (root.GetArrayLength() > 0)
+                return root[0].GetProperty("accountId").GetString();
             return null;
         }
 
-        /// <summary>
-        /// Parse Jira issue JSON to DTO
-        /// </summary>
+        public async Task MoveIssueToSprintAsync(
+            string jiraUrl, string email, string apiToken, string issueKey, int sprintId)
+        {
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { issues = new[] { issueKey } }, _jsonOptions),
+                Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/agile/1.0/sprint/{sprintId}/issue";
+            var resp = await SendWithFallbackAsync(HttpMethod.Post, url, email, apiToken, body);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to move issue to sprint: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
+        }
+
+        public async Task MoveIssueToBacklogAsync(
+            string jiraUrl, string email, string apiToken, string issueKey)
+        {
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { issues = new[] { issueKey } }, _jsonOptions),
+                Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/agile/1.0/backlog/issue";
+            var resp = await SendWithFallbackAsync(HttpMethod.Post, url, email, apiToken, body);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to move issue to backlog: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
+        }
+
+        public async Task CreateIssueLinkAsync(
+            string jiraUrl, string email, string apiToken,
+            string fromIssueKey, string toIssueKey, string linkType = "Relates")
+        {
+            var payload = new
+            {
+                type = new { name = linkType },
+                inwardIssue = new { key = fromIssueKey },
+                outwardIssue = new { key = toIssueKey }
+            };
+            var body = new StringContent(
+                JsonSerializer.Serialize(payload, _jsonOptions), Encoding.UTF8, "application/json");
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issueLink";
+            var resp = await SendWithFallbackAsync(HttpMethod.Post, url, email, apiToken, body);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to create issue link: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
+        }
+
+        public async Task DeleteIssueAsync(
+            string jiraUrl, string email, string apiToken, string issueKey)
+        {
+            var url = $"{jiraUrl.TrimEnd('/')}/rest/api/3/issue/{issueKey}";
+            var resp = await SendWithFallbackAsync(HttpMethod.Delete, url, email, apiToken);
+            if (!resp.IsSuccessStatusCode)
+                throw new Exception($"Failed to delete Jira issue: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}");
+        }
+
+        // ── Helpers ──────────────────────────────────────────────────────────────────
+
+        private static object BuildAdf(string text) => new
+        {
+            type = "doc",
+            version = 1,
+            content = new[]
+            {
+                new { type = "paragraph", content = new[] { new { type = "text", text } } }
+            }
+        };
+
         private JiraIssueDTO ParseJiraIssue(JsonElement issue)
         {
             var fields = issue.GetProperty("fields");
@@ -328,129 +374,40 @@ namespace BLL.Services
                 Status = fields.GetProperty("status").GetProperty("name").GetString() ?? ""
             };
 
-            // Optional fields
             if (fields.TryGetProperty("description", out var desc) && desc.ValueKind != JsonValueKind.Null)
+                dto.Description = ExtractTextFromAdf(desc);
+            if (fields.TryGetProperty("priority", out var pri) && pri.ValueKind != JsonValueKind.Null)
+                dto.Priority = pri.GetProperty("name").GetString();
+            if (fields.TryGetProperty("assignee", out var asgn) && asgn.ValueKind != JsonValueKind.Null)
             {
-                dto.Description = ExtractTextFromDescription(desc);
+                dto.AssigneeJiraId = asgn.GetProperty("accountId").GetString();
+                dto.AssigneeName = asgn.GetProperty("displayName").GetString();
             }
-
-            if (fields.TryGetProperty("priority", out var priority) && priority.ValueKind != JsonValueKind.Null)
-            {
-                dto.Priority = priority.GetProperty("name").GetString();
-            }
-
-            if (fields.TryGetProperty("assignee", out var assignee) && assignee.ValueKind != JsonValueKind.Null)
-            {
-                dto.AssigneeJiraId = assignee.GetProperty("accountId").GetString();
-                dto.AssigneeName = assignee.GetProperty("displayName").GetString();
-            }
-
             if (fields.TryGetProperty("created", out var created))
-            {
                 dto.CreatedDate = DateTime.Parse(created.GetString() ?? DateTime.UtcNow.ToString());
-            }
-
             if (fields.TryGetProperty("updated", out var updated))
-            {
                 dto.UpdatedDate = DateTime.Parse(updated.GetString() ?? DateTime.UtcNow.ToString());
-            }
 
             return dto;
         }
 
-        /// <summary>
-        /// Extract plain text from Jira's Atlassian Document Format (ADF)
-        /// </summary>
-        private string ExtractTextFromDescription(JsonElement description)
+        private static string ExtractTextFromAdf(JsonElement description)
         {
             if (description.ValueKind == JsonValueKind.String)
-            {
                 return description.GetString() ?? "";
-            }
 
-            // ADF format
-            if (description.TryGetProperty("content", out var content))
+            if (!description.TryGetProperty("content", out var content))
+                return "";
+
+            var sb = new StringBuilder();
+            foreach (var node in content.EnumerateArray())
             {
-                var textBuilder = new StringBuilder();
-                foreach (var node in content.EnumerateArray())
-                {
-                    if (node.TryGetProperty("content", out var innerContent))
-                    {
-                        foreach (var textNode in innerContent.EnumerateArray())
-                        {
-                            if (textNode.TryGetProperty("text", out var text))
-                            {
-                                textBuilder.Append(text.GetString());
-                            }
-                        }
-                    }
-                }
-                return textBuilder.ToString();
+                if (!node.TryGetProperty("content", out var inner)) continue;
+                foreach (var textNode in inner.EnumerateArray())
+                    if (textNode.TryGetProperty("text", out var text))
+                        sb.Append(text.GetString());
             }
-
-            return "";
-        }
-
-        public async Task MoveIssueToSprintAsync(string jiraUrl, string email, string apiToken, string issueKey, int sprintId)
-        {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var payload = new { issues = new[] { issueKey } };
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            // Jira Software Agile API
-            var response = await client.PostAsync($"/rest/agile/1.0/sprint/{sprintId}/issue", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to move issue to sprint: {response.StatusCode} - {error}");
-            }
-        }
-
-        public async Task MoveIssueToBacklogAsync(string jiraUrl, string email, string apiToken, string issueKey)
-        {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var payload = new { issues = new[] { issueKey } };
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await client.PostAsync("/rest/agile/1.0/backlog/issue", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to move issue to backlog: {response.StatusCode} - {error}");
-            }
-        }
-
-        public async Task CreateIssueLinkAsync(string jiraUrl, string email, string apiToken, string fromIssueKey, string toIssueKey, string linkType = "Relates")
-        {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var payload = new
-            {
-                type = new { name = linkType },
-                inwardIssue = new { key = fromIssueKey },
-                outwardIssue = new { key = toIssueKey }
-            };
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await client.PostAsync("/rest/api/3/issueLink", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to create issue link: {response.StatusCode} - {error}");
-            }
-        }
-
-        public async Task DeleteIssueAsync(string jiraUrl, string email, string apiToken, string issueKey)
-        {
-            var client = CreateAuthenticatedClient(jiraUrl, email, apiToken);
-            var response = await client.DeleteAsync($"/rest/api/3/issue/{issueKey}");
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to delete Jira issue: {response.StatusCode} - {error}");
-            }
+            return sb.ToString();
         }
     }
 }

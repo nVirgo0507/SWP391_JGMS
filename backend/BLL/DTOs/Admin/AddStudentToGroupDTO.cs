@@ -3,12 +3,17 @@ using System.ComponentModel.DataAnnotations;
 namespace BLL.DTOs.Admin
 {
     /// <summary>
-    /// BR-054: Request DTO to add a student to a group
-    /// Used by lecturer to add students to their assigned groups
+    /// Request DTO to add one or more students to a group in a single call.
+    /// Each identifier can be an email address or a numeric user ID.
     /// </summary>
-    public class AddStudentToGroupDTO
+    public class AddStudentsToGroupDTO
     {
+        /// <summary>
+        /// Array of student identifiers (email or numeric ID).
+        /// Example: ["student1@fpt.edu.vn", "42", "student3@fpt.edu.vn"]
+        /// </summary>
         [Required]
-        public int StudentId { get; set; }
+        [MinLength(1, ErrorMessage = "Provide at least one student identifier.")]
+        public List<string> StudentIdentifiers { get; set; } = new();
     }
 }
