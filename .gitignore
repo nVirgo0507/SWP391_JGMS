@@ -27,6 +27,9 @@ Thumbs.db
 postgres_data/
 pgdata/
 
+# Local development settings (may contain secrets)
+appsettings.Development.json
+
 # Docker
 .env
 /backend/PasswordHashGenerator/
