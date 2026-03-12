@@ -1,13 +1,16 @@
 using DAL.Models;
-using System.Threading.Tasks;
+using System.Collections.Generic;
+using SystemTask = System.Threading.Tasks.Task;
 
 namespace DAL.Repositories.Interface
 {
     public interface IGithubIntegrationRepository
     {
-        Task<GithubIntegration?> GetByProjectIdAsync(int projectId);
-        System.Threading.Tasks.Task AddAsync(GithubIntegration integration);
-        System.Threading.Tasks.Task UpdateAsync(GithubIntegration integration);
-        System.Threading.Tasks.Task DeleteAsync(int integrationId);
+        System.Threading.Tasks.Task<GithubIntegration?> GetByProjectIdAsync(int projectId);
+        System.Threading.Tasks.Task<List<GithubIntegration>> GetAllAsync();
+        SystemTask AddAsync(GithubIntegration integration);
+        SystemTask UpdateAsync(GithubIntegration integration);
+        SystemTask UpdateAllAsync(List<GithubIntegration> integrations);
+        SystemTask DeleteAsync(int integrationId);
     }
 }

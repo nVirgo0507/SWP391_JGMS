@@ -101,7 +101,11 @@ public class Program
 		});
 
 		var jwtSettings = builder.Configuration.GetSection("Jwt");
-		var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
+		var jwtKeyValue = jwtSettings["Key"];
+		if (string.IsNullOrWhiteSpace(jwtKeyValue))
+			throw new InvalidOperationException(
+				"Jwt:Key is not configured. Set the Jwt__Key environment variable (Render) or add it to appsettings.Development.json (local).");
+		var key = Encoding.UTF8.GetBytes(jwtKeyValue);
 
 		builder.Services.AddAuthentication(options =>
 		{
@@ -176,8 +180,8 @@ public class Program
 		// Register HttpClient for Jira API
 		builder.Services.AddHttpClient();
 
-		// Register Data Protection for encrypting API tokens
-		builder.Services.AddDataProtection();
+		// Register token encryption service (AES-256 with a fixed key — survives restarts)
+		builder.Services.AddSingleton<BLL.Services.Interface.ITokenEncryptionService, BLL.Services.TokenEncryptionService>();
 
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
