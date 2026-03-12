@@ -101,7 +101,11 @@ public class Program
 		});
 
 		var jwtSettings = builder.Configuration.GetSection("Jwt");
-		var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
+		var jwtKeyValue = jwtSettings["Key"];
+		if (string.IsNullOrWhiteSpace(jwtKeyValue))
+			throw new InvalidOperationException(
+				"Jwt:Key is not configured. Set the Jwt__Key environment variable (Render) or add it to appsettings.Development.json (local).");
+		var key = Encoding.UTF8.GetBytes(jwtKeyValue);
 
 		builder.Services.AddAuthentication(options =>
 		{

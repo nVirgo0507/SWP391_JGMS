@@ -63,5 +63,30 @@ public class TokenEncryptionService : ITokenEncryptionService
 
         return Encoding.UTF8.GetString(plainBytes);
     }
+
+    public string ReEncrypt(string cipherText, string newBase64Key)
+    {
+        var newKey = Convert.FromBase64String(newBase64Key);
+        if (newKey.Length != 32)
+            throw new InvalidOperationException("New key must be a 32-byte (256-bit) Base64 string.");
+
+        // Decrypt with current key, re-encrypt with new key
+        var plainText = Decrypt(cipherText);
+
+        using var aes = Aes.Create();
+        aes.Key = newKey;
+        aes.GenerateIV();
+
+        using var encryptor = aes.CreateEncryptor();
+        var plainBytes = Encoding.UTF8.GetBytes(plainText);
+        var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+
+        var result = new byte[aes.IV.Length + cipherBytes.Length];
+        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
+        Buffer.BlockCopy(cipherBytes, 0, result, aes.IV.Length, cipherBytes.Length);
+
+        return Convert.ToBase64String(result);
+    }
 }
+
 

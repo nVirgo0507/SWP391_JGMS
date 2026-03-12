@@ -1,6 +1,7 @@
 ﻿using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
+using DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -24,12 +25,21 @@ namespace SWP391_JGMS.Controllers
         private readonly IAdminService _adminService;
         private readonly IIntegrationService _integrationService;
         private readonly IdentifierResolver _resolver;
+        private readonly ITokenEncryptionService _tokenEncryption;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
 
-        public AdminController(IAdminService adminService, IIntegrationService integrationService, IdentifierResolver resolver)
+        public AdminController(
+            IAdminService adminService,
+            IIntegrationService integrationService,
+            IdentifierResolver resolver,
+            ITokenEncryptionService tokenEncryptionService,
+            IGithubIntegrationRepository githubIntegrationRepository)
         {
             _adminService = adminService;
             _integrationService = integrationService;
             _resolver = resolver;
+            _tokenEncryption = tokenEncryptionService;
+            _githubIntegrationRepository = githubIntegrationRepository;
         }
 
         /// <summary>Reads the authenticated user's ID from the JWT sub claim.</summary>
@@ -618,6 +628,60 @@ namespace SWP391_JGMS.Controllers
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
+
+        #region Security
+
+        /// <summary>
+        /// Rotates the AES encryption key for all stored GitHub API tokens.
+        ///
+        /// How to use when key is compromised:
+        /// 1. Generate a new 32-byte Base64 key (e.g. via: openssl rand -base64 32)
+        /// 2. Call this endpoint with the new key — all tokens are re-encrypted atomically
+        /// 3. Update the Encryption__Key environment variable on Render to the new key
+        /// 4. Redeploy the app
+        ///
+        /// The old key must still be active (in env var) when calling this endpoint.
+        /// </summary>
+        [HttpPost("security/rotate-encryption-key")]
+        public async Task<IActionResult> RotateEncryptionKey([FromBody] RotateKeyDTO dto)
+        {
+            try
+            {
+                // Validate the new key is a proper 32-byte Base64 string
+                var newKeyBytes = Convert.FromBase64String(dto.NewBase64Key);
+                if (newKeyBytes.Length != 32)
+                    return BadRequest(new { message = "NewBase64Key must be a 32-byte (256-bit) Base64-encoded string." });
+
+                var allIntegrations = await _githubIntegrationRepository.GetAllAsync();
+
+                if (!allIntegrations.Any())
+                    return Ok(new { message = "No GitHub integrations found. Nothing to rotate.", count = 0 });
+
+                foreach (var integration in allIntegrations)
+                {
+                    integration.ApiToken = _tokenEncryption.ReEncrypt(integration.ApiToken, dto.NewBase64Key);
+                    integration.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await _githubIntegrationRepository.UpdateAllAsync(allIntegrations);
+
+                return Ok(new
+                {
+                    message = "Encryption key rotated successfully. Update your Encryption__Key environment variable now.",
+                    tokensRotated = allIntegrations.Count
+                });
+            }
+            catch (FormatException)
+            {
+                return BadRequest(new { message = "NewBase64Key is not a valid Base64 string." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        #endregion
 
         #endregion
     }
