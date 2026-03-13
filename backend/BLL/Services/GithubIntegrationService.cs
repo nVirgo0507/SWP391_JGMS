@@ -37,7 +37,16 @@ namespace BLL.Services
 
             try
             {
-                var commits = await _githubApiService.GetCommitsAsync(projectId);
+                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+                DateTimeOffset? since = null;
+                
+                if (integration?.LastSync != null)
+                {
+                    // Add a small buffer of 1 minute to ensure no commits are missed during edge cases
+                    since = new DateTimeOffset(integration.LastSync.Value.AddMinutes(-1));
+                }
+
+                var commits = await _githubApiService.GetCommitsAsync(projectId, since);
 
                 if (commits == null || !commits.Any())
                 {
@@ -45,9 +54,28 @@ namespace BLL.Services
                     return;
                 }
 
-                foreach (var dto in commits)
+                //Fetch existing commit SHAs for this project to avoid N+1 queries
+                var existingGithubCommits = await _githubCommitRepository.GetCommitsByProjectIdAsync(projectId);
+                var existingShas = existingGithubCommits.Select(c => c.CommitSha).ToHashSet();
+
+                //Fetch all users for author mapping in memory
+                var allUsers = await _userRepository.GetAllAsync();
+                var usersByGithubUsername = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.GithubUsername))
+                    .ToDictionary(u => u.GithubUsername, u => u, StringComparer.OrdinalIgnoreCase);
+                var usersByEmail = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.Email))
+                    .ToDictionary(u => u.Email, u => u, StringComparer.OrdinalIgnoreCase);
+
+                var newGithubCommits = new System.Collections.Generic.List<GithubCommit>();
+                
+                // Group by SHA to get distinct commits (in case the API returns duplicates)
+                var uniqueCommits = commits.GroupBy(c => c.Sha).Select(g => g.First()).ToList();
+                var dtosBySha = uniqueCommits.ToDictionary(c => c.Sha, c => c);
+
+                foreach (var dto in uniqueCommits)
                 {
-                    if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
+                    if (existingShas.Contains(dto.Sha))
                         continue;
 
                     // 1. Save to GithubCommit (raw data)
@@ -65,25 +93,51 @@ namespace BLL.Services
                         LastSynced = DateTime.UtcNow
                     };
 
-                    await _githubCommitRepository.AddAsync(githubCommit);
+                    newGithubCommits.Add(githubCommit);
+                }
+
+                if (newGithubCommits.Any())
+                {
+                    await _githubCommitRepository.AddRangeAsync(newGithubCommits);
 
                     // 2. Try to map to internal User and create base Commit
-                    var user = await MapGithubAuthorToUserAsync(dto.AuthorName, dto.AuthorEmail);
-                    if (user != null)
-                    {
-                        var baseCommit = new Commit
-                        {
-                            ProjectId = projectId,
-                            UserId = user.UserId,
-                            GithubCommitId = githubCommit.GithubCommitId,
-                            CommitMessage = dto.Message,
-                            CommitDate = dto.Date,
-                            Additions = dto.Additions,
-                            Deletions = dto.Deletions,
-                            ChangedFiles = dto.ChangedFiles
-                        };
+                    var newBaseCommits = new System.Collections.Generic.List<Commit>();
 
-                        await _commitRepository.AddAsync(baseCommit);
+                    foreach (var githubCommit in newGithubCommits)
+                    {
+                        var dto = dtosBySha[githubCommit.CommitSha];
+
+                        User? user = null;
+                        if (!string.IsNullOrEmpty(dto.AuthorName) && usersByGithubUsername.TryGetValue(dto.AuthorName, out var userByGithub))
+                        {
+                            user = userByGithub;
+                        }
+                        else if (!string.IsNullOrEmpty(dto.AuthorEmail) && usersByEmail.TryGetValue(dto.AuthorEmail, out var userByEmail))
+                        {
+                            user = userByEmail;
+                        }
+
+                        if (user != null)
+                        {
+                            var baseCommit = new Commit
+                            {
+                                ProjectId = projectId,
+                                UserId = user.UserId,
+                                GithubCommitId = githubCommit.GithubCommitId,
+                                CommitMessage = dto.Message,
+                                CommitDate = dto.Date,
+                                Additions = dto.Additions,
+                                Deletions = dto.Deletions,
+                                ChangedFiles = dto.ChangedFiles
+                            };
+
+                            newBaseCommits.Add(baseCommit);
+                        }
+                    }
+
+                    if (newBaseCommits.Any())
+                    {
+                        await _commitRepository.AddRangeAsync(newBaseCommits);
                     }
                 }
 

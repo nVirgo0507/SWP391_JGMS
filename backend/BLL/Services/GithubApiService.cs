@@ -90,35 +90,59 @@ namespace BLL.Services
             }).ToList();
         }
 
-        public async Task<List<GithubCommitDto>> GetCommitsAsync(int projectId)
+        public async Task<List<GithubCommitDto>> GetCommitsAsync(int projectId, System.DateTimeOffset? since = null)
         {
             var client = await GetClientAsync(projectId);
             var (owner, repo) = await GetRepoInfoAsync(projectId);
 
-            var commits = await client.Repository.Commit.GetAll(owner, repo);
+            var request = new CommitRequest();
+            if (since.HasValue)
+            {
+                request.Since = since.Value;
+            }
 
-			var result = new List<GithubCommitDto>();
+            // If it's a new sync without a 'since' date, only fetch the latest 100 to avoid massive wait times
+            var options = !since.HasValue
+                ? new ApiOptions { PageSize = 100, PageCount = 1 }
+                : new ApiOptions { PageSize = 100 };
 
-			foreach (var c in commits)
-			{
-				var detail = await client.Repository.Commit.Get(owner, repo, c.Sha);
+            var commits = await client.Repository.Commit.GetAll(owner, repo, request, options);
 
-				result.Add(new GithubCommitDto
-				{
-					Sha = c.Sha,
-					Message = c.Commit.Message,
-					AuthorName = c.Commit.Author?.Name ?? c.Commit.Committer?.Name ?? c.Author?.Login ?? "Unknown",
-					AuthorEmail = c.Commit.Author?.Email ?? c.Commit.Committer?.Email ?? "",
-					Date = c.Commit.Author?.Date.UtcDateTime ?? c.Commit.Committer?.Date.UtcDateTime ?? DateTime.UtcNow,
-					HtmlUrl = c.HtmlUrl,
+			var result = new System.Collections.Concurrent.ConcurrentBag<GithubCommitDto>();
+            using var semaphore = new System.Threading.SemaphoreSlim(10); // Limit to 10 concurrent requests to respect rate limits
 
-					Additions = detail.Stats?.Additions ?? 0,
-					Deletions = detail.Stats?.Deletions ?? 0,
-					ChangedFiles = detail.Files?.Count ?? 0
-				});
-			}
-			return result;
-		}
+            var tasks = commits.Select(async c =>
+            {
+                await semaphore.WaitAsync();
+                try
+                {
+                    var detail = await client.Repository.Commit.Get(owner, repo, c.Sha);
+                    result.Add(new GithubCommitDto
+                    {
+                        Sha = c.Sha,
+                        Message = c.Commit.Message,
+                        AuthorName = c.Commit.Author?.Name ?? c.Commit.Committer?.Name ?? c.Author?.Login ?? "Unknown",
+                        AuthorEmail = c.Commit.Author?.Email ?? c.Commit.Committer?.Email ?? "",
+                        Date = c.Commit.Author?.Date.UtcDateTime ?? c.Commit.Committer?.Date.UtcDateTime ?? DateTime.UtcNow,
+                        HtmlUrl = c.HtmlUrl,
+
+                        Additions = detail.Stats?.Additions ?? 0,
+                        Deletions = detail.Stats?.Deletions ?? 0,
+                        ChangedFiles = detail.Files?.Count ?? 0
+                    });
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+
+			return result.ToList();
+        }
+
+
 
         public async Task ValidateConnectionAsync(string apiToken, string repoOwner, string repoName)
         {
