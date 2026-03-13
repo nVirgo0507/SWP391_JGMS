@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+﻿﻿-- ============================================================================
 -- SWP391 Project Management System - PostgreSQL Database Setup
 -- ============================================================================
 
@@ -83,9 +83,13 @@ CREATE TABLE GROUP_MEMBER (
     user_id INTEGER NOT NULL REFERENCES "USER"(user_id),
     is_leader BOOLEAN DEFAULT FALSE,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT unique_group_member UNIQUE (group_id, user_id)
+    left_at TIMESTAMP DEFAULT NULL
 );
+
+-- Only one active (left_at IS NULL) membership per student per group
+CREATE UNIQUE INDEX unique_active_group_member
+    ON GROUP_MEMBER (group_id, user_id)
+    WHERE left_at IS NULL;
 
 CREATE INDEX idx_group_member_group ON GROUP_MEMBER(group_id);
 CREATE INDEX idx_group_member_user ON GROUP_MEMBER(user_id);
@@ -125,7 +129,7 @@ CREATE TABLE JIRA_INTEGRATION (
     integration_id SERIAL PRIMARY KEY,
     project_id INTEGER UNIQUE NOT NULL REFERENCES PROJECT(project_id),
     jira_url VARCHAR(255) NOT NULL,
-    api_token VARCHAR(255) NOT NULL,
+    api_token TEXT NOT NULL,
     jira_email VARCHAR(100) NOT NULL,
     project_key VARCHAR(50) NOT NULL,
     last_sync TIMESTAMP,
@@ -148,7 +152,7 @@ CREATE TABLE GITHUB_INTEGRATION (
     integration_id SERIAL PRIMARY KEY,
     project_id INTEGER UNIQUE NOT NULL REFERENCES PROJECT(project_id),
     repo_url VARCHAR(255) NOT NULL,
-    api_token VARCHAR(255) NOT NULL,
+    api_token TEXT NOT NULL,
     repo_owner VARCHAR(100) NOT NULL,
     repo_name VARCHAR(100) NOT NULL,
     last_sync TIMESTAMP,

@@ -25,6 +25,8 @@ public partial class GithubIntegration
 
     public DateTime? LastSync { get; set; }
 
+    public SyncStatus SyncStatus { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

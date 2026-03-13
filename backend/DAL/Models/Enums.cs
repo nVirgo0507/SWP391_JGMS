@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using NpgsqlTypes;
 
 namespace DAL.Models
 {
@@ -36,6 +37,7 @@ namespace DAL.Models
 	public enum RequirementType
 	{
 		functional,
+		[PgName("non-functional")]
 		non_functional
 	}
 

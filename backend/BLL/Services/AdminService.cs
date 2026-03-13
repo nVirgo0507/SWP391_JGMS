@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Admin;
+﻿﻿using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
@@ -13,16 +13,19 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly IStudentGroupRepository _groupRepository;
         private readonly IGroupMemberRepository _memberRepository;
+        private readonly IProjectRepository _projectRepository;
         private readonly PasswordHasher<User> _passwordHasher;
 
         public AdminService(
             IUserRepository userRepository,
             IStudentGroupRepository groupRepository,
-            IGroupMemberRepository memberRepository)
+            IGroupMemberRepository memberRepository,
+            IProjectRepository projectRepository)
         {
             _userRepository = userRepository;
             _groupRepository = groupRepository;
             _memberRepository = memberRepository;
+            _projectRepository = projectRepository;
             _passwordHasher = new PasswordHasher<User>();
         }
 
@@ -270,6 +273,29 @@ namespace BLL.Services
             return users.Select(MapToUserResponse).ToList();
         }
 
+        public async Task<List<UserResponseDTO>> SearchUsersAsync(string query, string? role = null)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                throw new Exception("Search query cannot be empty");
+
+            UserRole? userRole = null;
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                if (!Enum.TryParse<UserRole>(role, true, out var parsedRole))
+                    throw new Exception($"Invalid role '{role}'. Valid roles: admin, lecturer, student");
+                userRole = parsedRole;
+            }
+
+            var users = await _userRepository.SearchByNameOrEmailAsync(query, userRole);
+            return users.Select(MapToUserResponse).ToList();
+        }
+
+        public async Task<List<UserResponseDTO>> GetAvailableStudentsAsync()
+        {
+            var students = await _userRepository.GetAvailableStudentsAsync();
+            return students.Select(MapToUserResponse).ToList();
+        }
+
         public async System.Threading.Tasks.Task DeleteUserAsync(int userId)
         {
             // Verify user exists
@@ -318,28 +344,52 @@ namespace BLL.Services
                 throw new Exception("Group code already exists in the system");
             }
 
-            // Validate lecturer exists and has correct role
-            var lecturer = await _userRepository.GetByIdAsync(dto.LecturerId);
-            if (lecturer == null)
+            // Resolve and validate lecturer (accepts email or numeric ID)
+            int resolvedLecturerId;
+            try { resolvedLecturerId = await ResolveUserIdentifierAsync(dto.LecturerId); }
+            catch (KeyNotFoundException) { throw new Exception($"Lecturer '{dto.LecturerId}' not found. Provide a valid email or numeric user ID."); }
+
+            var lecturer = await _userRepository.GetByIdAsync(resolvedLecturerId);
+            if (lecturer!.Role != UserRole.lecturer)
+                throw new Exception($"User '{dto.LecturerId}' is not a lecturer (current role: {lecturer.Role})");
+
+            // Resolve and validate leader if provided (accepts email or numeric ID)
+            int? resolvedLeaderId = null;
+            if (!string.IsNullOrWhiteSpace(dto.LeaderId))
             {
-                throw new Exception($"Lecturer with ID {dto.LecturerId} not found");
-            }
-            if (lecturer.Role != UserRole.lecturer)
-            {
-                throw new Exception($"User with ID {dto.LecturerId} is not a lecturer (current role: {lecturer.Role})");
+                try { resolvedLeaderId = await ResolveUserIdentifierAsync(dto.LeaderId); }
+                catch (KeyNotFoundException) { throw new Exception($"Leader '{dto.LeaderId}' not found. Provide a valid email or numeric user ID."); }
+
+                var leader = await _userRepository.GetByIdAsync(resolvedLeaderId.Value);
+                if (leader!.Role != UserRole.student)
+                    throw new Exception($"User '{dto.LeaderId}' is not a student (current role: {leader.Role})");
+                if (await _memberRepository.IsStudentInAnyGroupAsync(resolvedLeaderId.Value))
+                    throw new Exception($"Student '{leader.FullName}' is already a member of another group and cannot be assigned as leader");
             }
 
-            // Validate leader if provided
-            if (dto.LeaderId.HasValue)
+            // Resolve and validate initial members if provided (accepts email or numeric ID)
+            var validatedMemberIds = new HashSet<int>();
+            if (dto.MemberIds != null && dto.MemberIds.Count > 0)
             {
-                var leader = await _userRepository.GetByIdAsync(dto.LeaderId.Value);
-                if (leader == null)
+                foreach (var memberIdentifier in dto.MemberIds)
                 {
-                    throw new Exception($"Leader with ID {dto.LeaderId.Value} not found");
-                }
-                if (leader.Role != UserRole.student)
-                {
-                    throw new Exception($"User with ID {dto.LeaderId.Value} is not a student (current role: {leader.Role})");
+                    int memberId;
+                    try { memberId = await ResolveUserIdentifierAsync(memberIdentifier); }
+                    catch (KeyNotFoundException) { throw new Exception($"Member '{memberIdentifier}' not found. Provide a valid email or numeric user ID."); }
+
+                    var member = await _userRepository.GetByIdAsync(memberId);
+                    if (member!.Role != UserRole.student)
+                        throw new Exception($"User '{memberIdentifier}' ({member.FullName}) is not a student (current role: {member.Role})");
+
+                    // Skip duplicate check for the leader — they'll be added separately
+                    if (resolvedLeaderId.HasValue && memberId == resolvedLeaderId.Value)
+                    {
+                        validatedMemberIds.Add(memberId);
+                        continue;
+                    }
+                    if (await _memberRepository.IsStudentInAnyGroupAsync(memberId))
+                        throw new Exception($"Student '{member.FullName}' is already a member of another group");
+                    validatedMemberIds.Add(memberId);
                 }
             }
 
@@ -347,14 +397,31 @@ namespace BLL.Services
             {
                 GroupCode = dto.GroupCode,
                 GroupName = dto.GroupName,
-                LecturerId = dto.LecturerId,
-                LeaderId = dto.LeaderId,
+                LecturerId = resolvedLecturerId,
+                LeaderId = resolvedLeaderId,
                 Status = UserStatus.active,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             await _groupRepository.AddAsync(group);
+
+            // Auto-add leader as a group member with is_leader = true
+            if (resolvedLeaderId.HasValue)
+                validatedMemberIds.Add(resolvedLeaderId.Value);
+
+            // Add all members (leader + any extra members from MemberIds)
+            foreach (var memberId in validatedMemberIds)
+            {
+                var groupMember = new GroupMember
+                {
+                    GroupId = group.GroupId,
+                    UserId = memberId,
+                    IsLeader = resolvedLeaderId.HasValue && memberId == resolvedLeaderId.Value,
+                    JoinedAt = DateTime.UtcNow
+                };
+                await _memberRepository.AddAsync(groupMember);
+            }
 
             // Reload with details
             var createdGroup = await _groupRepository.GetGroupWithDetailsAsync(group.GroupId);
@@ -383,24 +450,53 @@ namespace BLL.Services
             if (!string.IsNullOrEmpty(dto.GroupName))
                 group.GroupName = dto.GroupName;
 
-            if (dto.LecturerId.HasValue)
+            if (!string.IsNullOrWhiteSpace(dto.LecturerId))
             {
-                var lecturer = await _userRepository.GetByIdAsync(dto.LecturerId.Value);
+                int resolvedLecturerId;
+                try { resolvedLecturerId = await ResolveUserIdentifierAsync(dto.LecturerId); }
+                catch (KeyNotFoundException) { throw new Exception($"Lecturer '{dto.LecturerId}' not found. Provide a valid email or numeric user ID."); }
+
+                var lecturer = await _userRepository.GetByIdAsync(resolvedLecturerId);
                 if (lecturer == null || lecturer.Role != UserRole.lecturer)
-                {
-                    throw new Exception("Invalid lecturer ID or user is not a lecturer");
-                }
-                group.LecturerId = dto.LecturerId.Value;
+                    throw new Exception("Invalid lecturer identifier or user is not a lecturer");
+                group.LecturerId = resolvedLecturerId;
             }
 
-            if (dto.LeaderId.HasValue)
+            if (!string.IsNullOrWhiteSpace(dto.LeaderId))
             {
-                var leader = await _userRepository.GetByIdAsync(dto.LeaderId.Value);
+                int resolvedLeaderId;
+                try { resolvedLeaderId = await ResolveUserIdentifierAsync(dto.LeaderId); }
+                catch (KeyNotFoundException) { throw new Exception($"Leader '{dto.LeaderId}' not found. Provide a valid email or numeric user ID."); }
+
+                var leader = await _userRepository.GetByIdAsync(resolvedLeaderId);
                 if (leader == null || leader.Role != UserRole.student)
+                    throw new Exception("Invalid leader identifier or user is not a student");
+
+                // New leader must already be an active member of this group
+                if (!await _memberRepository.IsMemberOfGroupAsync(groupId, resolvedLeaderId))
+                    throw new Exception($"Student '{leader.FullName}' is not a member of this group. Add them to the group first before assigning as leader.");
+
+                var oldLeaderId = group.LeaderId;
+                group.LeaderId = resolvedLeaderId;
+
+                // Clear is_leader on old leader
+                if (oldLeaderId.HasValue && oldLeaderId.Value != resolvedLeaderId)
                 {
-                    throw new Exception("Invalid leader ID or user is not a student");
+                    var oldLeaderMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, oldLeaderId.Value);
+                    if (oldLeaderMember != null)
+                    {
+                        oldLeaderMember.IsLeader = false;
+                        await _memberRepository.UpdateAsync(oldLeaderMember);
+                    }
                 }
-                group.LeaderId = dto.LeaderId.Value;
+
+                // Set is_leader = true on the new leader's membership row
+                var newLeaderMember = await _memberRepository.GetByGroupAndUserIdAsync(groupId, resolvedLeaderId);
+                if (newLeaderMember != null && newLeaderMember.IsLeader != true)
+                {
+                    newLeaderMember.IsLeader = true;
+                    await _memberRepository.UpdateAsync(newLeaderMember);
+                }
             }
 
             if (dto.Status.HasValue)
@@ -434,97 +530,139 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            // Check if group can be deleted (no associated project)
-            if (!await _groupRepository.CanDeleteGroupAsync(groupId))
-            {
-                throw new Exception("Cannot delete group: group has an associated project. Please delete or reassign the project first.");
-            }
+            // Remove all group members before soft-deleting
+            await _memberRepository.RemoveAllMembersAsync(groupId);
 
-            // Use soft delete
-            await _groupRepository.DeleteAsync(groupId);
-        }
-
-        #endregion
-
-        #region Lecturer Management
-
-        public async Task<List<UserResponseDTO>> GetAllLecturersAsync()
-        {
-            var lecturers = await _userRepository.GetByRoleAsync(UserRole.lecturer);
-            return lecturers.Select(MapToUserResponse).ToList();
-        }
-
-        public async System.Threading.Tasks.Task AssignLecturerToGroupAsync(int groupId, int lecturerId)
-        {
-            var group = await _groupRepository.GetByIdAsync(groupId);
-            if (group == null)
-            {
-                throw new Exception("Student group not found");
-            }
-
-            var lecturer = await _userRepository.GetByIdAsync(lecturerId);
-            if (lecturer == null || lecturer.Role != UserRole.lecturer)
-            {
-                throw new Exception("Invalid lecturer ID or user is not a lecturer");
-            }
-
-            // BR-007: Inactive Users Cannot Login - also shouldn't be assigned
-            if (lecturer.Status == UserStatus.inactive)
-            {
-                throw new Exception("Cannot assign inactive lecturer to group");
-            }
-
-            group.LecturerId = lecturerId;
+            // Clear the leader reference
+            group.LeaderId = null;
             await _groupRepository.UpdateAsync(group);
+
+            // Soft delete - sets status to inactive
+            await _groupRepository.DeleteAsync(groupId);
         }
 
         #endregion
 
         #region Group Member Management
 
-        public async System.Threading.Tasks.Task AddStudentToGroupAsync(int groupId, int studentId)
+        public async System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, string studentIdentifier)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
             if (group == null)
-            {
                 throw new Exception("Student group not found");
-            }
 
-            var student = await _userRepository.GetByIdAsync(studentId);
-            if (student == null || student.Role != UserRole.student)
-            {
-                throw new Exception("Invalid student ID or user is not a student");
-            }
+            int studentId;
+            try { studentId = await ResolveUserIdentifierAsync(studentIdentifier); }
+            catch (KeyNotFoundException) { throw new Exception($"Student '{studentIdentifier}' not found. Provide a valid email or numeric user ID."); }
 
-            if (await _memberRepository.IsMemberOfGroupAsync(groupId, studentId))
-            {
-                throw new Exception("Student is already a member of this group");
-            }
-
-            var member = new GroupMember
-            {
-                GroupId = groupId,
-                UserId = studentId,
-                IsLeader = group.LeaderId == studentId,
-                JoinedAt = DateTime.UtcNow
-            };
-
-            await _memberRepository.AddAsync(member);
-        }
-
-        public async System.Threading.Tasks.Task RemoveStudentFromGroupAsync(int groupId, int studentId)
-        {
             if (!await _memberRepository.IsMemberOfGroupAsync(groupId, studentId))
-            {
                 throw new Exception("Student is not a member of this group");
-            }
+
+            if (group.LeaderId == studentId)
+                throw new Exception("Cannot remove the group leader. Assign a different leader first before removing this student.");
 
             await _memberRepository.RemoveAsync(groupId, studentId);
+        }
+
+        public async Task<BulkAddResult> AddStudentsToGroupAsync(int groupId, List<string> studentIdentifiers)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null)
+                throw new Exception("Student group not found");
+
+            var result = new BulkAddResult();
+
+            foreach (var identifier in studentIdentifiers)
+            {
+                try
+                {
+                    int studentId;
+                    try { studentId = await ResolveUserIdentifierAsync(identifier); }
+                    catch (KeyNotFoundException) { throw new Exception($"User '{identifier}' not found. Provide a valid email or numeric user ID."); }
+
+                    var student = await _userRepository.GetByIdAsync(studentId);
+                    if (student == null || student.Role != UserRole.student)
+                        throw new Exception($"'{identifier}' is not a student account.");
+
+                    if (await _memberRepository.IsMemberOfGroupAsync(groupId, studentId))
+                        throw new Exception($"Already a member of this group.");
+
+                    if (await _memberRepository.IsStudentInAnyGroupAsync(studentId))
+                        throw new Exception($"Already a member of another group.");
+
+                    var previous = await _memberRepository.GetPreviousMembershipAsync(groupId, studentId);
+                    if (previous != null)
+                    {
+                        previous.IsLeader = group.LeaderId == studentId;
+                        await _memberRepository.RejoinAsync(previous);
+                    }
+                    else
+                    {
+                        await _memberRepository.AddAsync(new GroupMember
+                        {
+                            GroupId = groupId,
+                            UserId = studentId,
+                            IsLeader = group.LeaderId == studentId,
+                            JoinedAt = DateTime.UtcNow
+                        });
+                    }
+
+                    result.Added.Add(identifier);
+                    result.SuccessCount++;
+                }
+                catch (Exception ex)
+                {
+                    result.Failures.Add(new BulkAddFailure { Identifier = identifier, Reason = ex.Message });
+                    result.FailureCount++;
+                }
+            }
+
+            return result;
+        }
+
+        public async System.Threading.Tasks.Task ClearGroupMembersOnCompletionAsync(int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null)
+                throw new Exception("Student group not found");
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+                throw new Exception("This group has no associated project");
+
+            if (project.Status != ProjectStatus.completed)
+                throw new Exception("Cannot clear members: the group's project is not marked as completed");
+
+            // Remove all group members
+            await _memberRepository.RemoveAllMembersAsync(groupId);
+
+            // Clear the leader reference on the group
+            group.LeaderId = null;
+            group.UpdatedAt = DateTime.UtcNow;
+            await _groupRepository.UpdateAsync(group);
         }
 
         #endregion
 
         #region Helper Methods
+
+        /// <summary>
+        /// Resolves a user identifier (numeric ID or email) to an integer user ID.
+        /// Throws KeyNotFoundException if the user does not exist.
+        /// </summary>
+        private async Task<int> ResolveUserIdentifierAsync(string identifier)
+        {
+            if (int.TryParse(identifier, out var numericId))
+            {
+                var byId = await _userRepository.GetByIdAsync(numericId);
+                if (byId != null) return byId.UserId;
+                throw new KeyNotFoundException($"User with ID '{identifier}' not found.");
+            }
+
+            var byEmail = await _userRepository.GetByEmailAsync(identifier);
+            if (byEmail != null) return byEmail.UserId;
+            throw new KeyNotFoundException($"User '{identifier}' not found. Provide a valid email or numeric user ID.");
+        }
 
         private UserResponseDTO MapToUserResponse(User user)
         {
@@ -546,19 +684,161 @@ namespace BLL.Services
 
         private StudentGroupResponseDTO MapToGroupResponse(StudentGroup group)
         {
+            var activeMembers = group.GroupMembers
+                .Where(m => m.LeftAt == null)
+                .OrderByDescending(m => m.IsLeader)
+                .ThenBy(m => m.User.FullName)
+                .Select(m => new GroupMemberResponseDTO
+                {
+                    MemberId  = m.MembershipId,
+                    GroupId   = m.GroupId,
+                    UserId    = m.UserId,
+                    UserName  = m.User.FullName,
+                    Email     = m.User.Email,
+                    IsLeader  = m.IsLeader.GetValueOrDefault(false),
+                    JoinedAt  = m.JoinedAt,
+                    LeftAt    = m.LeftAt
+                })
+                .ToList();
+
             return new StudentGroupResponseDTO
             {
-                GroupId = group.GroupId,
-                GroupCode = group.GroupCode,
-                GroupName = group.GroupName,
-                LecturerId = group.LecturerId,
+                GroupId     = group.GroupId,
+                GroupCode   = group.GroupCode,
+                GroupName   = group.GroupName,
+                LecturerId  = group.LecturerId,
                 LecturerName = group.Lecturer.FullName,
-                LeaderId = group.LeaderId,
-                LeaderName = group.Leader?.FullName,
-                Status = group.Status,
-                MemberCount = group.GroupMembers.Count,
-                CreatedAt = group.CreatedAt,
-                UpdatedAt = group.UpdatedAt
+                LeaderId    = group.LeaderId,
+                LeaderName  = group.Leader?.FullName,
+                Status      = group.Status,
+                MemberCount = activeMembers.Count,
+                Members     = activeMembers,
+                CreatedAt   = group.CreatedAt,
+                UpdatedAt   = group.UpdatedAt
+            };
+        }
+
+        #endregion
+
+        #region Project Management
+
+        public async Task<ProjectResponseDTO> CreateProjectAsync(int groupId, CreateProjectDTO dto)
+        {
+            // Validate group exists
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null)
+                throw new Exception($"Group with ID {groupId} not found");
+
+            // Validate group doesn't already have a project (1:1)
+            var existing = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (existing != null)
+                throw new Exception($"Group '{group.GroupCode}' already has a project: '{existing.ProjectName}'");
+
+            // Validate dates
+            if (dto.StartDate.HasValue && dto.EndDate.HasValue && dto.EndDate < dto.StartDate)
+                throw new Exception("End date cannot be before start date");
+
+            var project = new Project
+            {
+                GroupId = groupId,
+                ProjectName = dto.ProjectName,
+                Description = dto.Description,
+                StartDate = dto.StartDate,
+                EndDate = dto.EndDate,
+                Status = ProjectStatus.active,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await _projectRepository.AddAsync(project);
+
+            // Reload with group details
+            var created = await _projectRepository.GetByIdAsync(project.ProjectId);
+            return MapToProjectResponse(created!);
+        }
+
+        public async Task<ProjectResponseDTO> UpdateProjectAsync(int projectId, UpdateProjectDTO dto)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            if (project == null)
+                throw new Exception("Project not found");
+
+            if (!string.IsNullOrEmpty(dto.ProjectName))
+                project.ProjectName = dto.ProjectName;
+
+            if (dto.Description != null)
+                project.Description = dto.Description;
+
+            if (dto.StartDate.HasValue)
+                project.StartDate = dto.StartDate;
+
+            if (dto.EndDate.HasValue)
+                project.EndDate = dto.EndDate;
+
+            // Validate dates
+            if (project.StartDate.HasValue && project.EndDate.HasValue && project.EndDate < project.StartDate)
+                throw new Exception("End date cannot be before start date");
+
+            if (!string.IsNullOrEmpty(dto.Status))
+            {
+                if (Enum.TryParse<ProjectStatus>(dto.Status.ToLower(), out var status))
+                    project.Status = status;
+                else
+                    throw new Exception($"Invalid project status: '{dto.Status}'. Use 'active' or 'completed'.");
+            }
+
+            await _projectRepository.UpdateAsync(project);
+
+            var updated = await _projectRepository.GetByIdAsync(project.ProjectId);
+            return MapToProjectResponse(updated!);
+        }
+
+        public async Task<ProjectResponseDTO?> GetProjectByIdAsync(int projectId)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            return project == null ? null : MapToProjectResponse(project);
+        }
+
+        public async Task<ProjectResponseDTO?> GetProjectByGroupIdAsync(int groupId)
+        {
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            return project == null ? null : MapToProjectResponse(project);
+        }
+
+        public async Task<List<ProjectResponseDTO>> GetAllProjectsAsync()
+        {
+            var projects = await _projectRepository.GetAllAsync();
+            return projects.Select(MapToProjectResponse).ToList();
+        }
+
+        public async System.Threading.Tasks.Task DeleteProjectAsync(int projectId)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            if (project == null)
+                throw new Exception("Project not found");
+
+            var (canDelete, reason) = await _projectRepository.CanDeleteProjectAsync(projectId);
+            if (!canDelete)
+                throw new Exception(reason);
+
+            await _projectRepository.DeleteAsync(projectId);
+        }
+
+        private ProjectResponseDTO MapToProjectResponse(Project project)
+        {
+            return new ProjectResponseDTO
+            {
+                ProjectId = project.ProjectId,
+                GroupId = project.GroupId,
+                GroupCode = project.Group?.GroupCode,
+                GroupName = project.Group?.GroupName,
+                ProjectName = project.ProjectName,
+                Description = project.Description,
+                StartDate = project.StartDate,
+                EndDate = project.EndDate,
+                Status = project.Status?.ToString(),
+                CreatedAt = project.CreatedAt,
+                UpdatedAt = project.UpdatedAt
             };
         }
 

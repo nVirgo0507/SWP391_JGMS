@@ -14,6 +14,12 @@ namespace BLL.Services.Interface
         #region GitHub Integration
 
         /// <summary>
+        /// BR-058: Configure GitHub integration for a project
+        /// Only admin users can configure integrations
+        /// </summary>
+        Task<bool> ConfigureProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto);
+
+        /// <summary>
         /// BR-058: Configure GitHub integration for a user
         /// Only admin users can configure integrations
         /// Validates user role is admin before allowing configuration
@@ -61,30 +67,5 @@ namespace BLL.Services.Interface
         Task<IntegrationTestResultDTO> TestIntegrationAsync(int adminUserId, string integrationType);
 
         #endregion
-    }
-
-    /// <summary>
-    /// BR-058: DTO for integration status information
-    /// </summary>
-    public class IntegrationStatusDTO
-    {
-        public int UserId { get; set; }
-        public string UserName { get; set; }
-        public bool HasGithubIntegration { get; set; }
-        public string? GithubUsername { get; set; }
-        public bool HasJiraIntegration { get; set; }
-        public string? JiraAccountId { get; set; }
-        public DateTime ConfiguredAt { get; set; }
-    }
-
-    /// <summary>
-    /// BR-058: DTO for integration connectivity test result
-    /// </summary>
-    public class IntegrationTestResultDTO
-    {
-        public string IntegrationType { get; set; }
-        public bool IsConnected { get; set; }
-        public string Message { get; set; }
-        public DateTime TestedAt { get; set; }
     }
 }

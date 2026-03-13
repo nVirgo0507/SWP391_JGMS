@@ -72,6 +72,26 @@ namespace BLL.Services.Interface
         /// Get single issue details
         /// </summary>
         Task<JiraIssueDTO> GetIssueDetailsAsync(int userId, string issueKey);
+
+        // ============================================================================
+        // Group-based wrappers (resolve groupId → projectId internally)
+        // ============================================================================
+
+        /// <summary>
+        /// Sync issues from Jira to database, identified by group instead of project.
+        /// Resolves groupId → projectId internally.
+        /// </summary>
+        Task<JiraSyncResultDTO> SyncIssuesByGroupAsync(int userId, int groupId);
+
+        /// <summary>
+        /// Get sync status, identified by group instead of project.
+        /// </summary>
+        Task<JiraSyncResultDTO> GetSyncStatusByGroupAsync(int userId, int groupId);
+
+        /// <summary>
+        /// Get all synced Jira issues for a group's project.
+        /// </summary>
+        Task<List<JiraIssueDTO>> GetProjectIssuesByGroupAsync(int userId, int groupId);
     }
 }
 

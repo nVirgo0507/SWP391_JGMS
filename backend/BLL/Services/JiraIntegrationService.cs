@@ -2,7 +2,9 @@
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
-using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Configuration;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace BLL.Services
 {
@@ -19,7 +21,7 @@ namespace BLL.Services
         private readonly IStudentGroupRepository _groupRepo;
         private readonly IGroupMemberRepository _groupMemberRepo;
         private readonly IJiraApiService _jiraApiService;
-        private readonly IDataProtector _dataProtector;
+        private readonly byte[] _encryptionKey;
 
         public JiraIntegrationService(
             IJiraIntegrationRepository jiraIntegrationRepo,
@@ -29,7 +31,7 @@ namespace BLL.Services
             IStudentGroupRepository groupRepo,
             IGroupMemberRepository groupMemberRepo,
             IJiraApiService jiraApiService,
-            IDataProtectionProvider dataProtectionProvider)
+            IConfiguration configuration)
         {
             _jiraIntegrationRepo = jiraIntegrationRepo;
             _jiraIssueRepo = jiraIssueRepo;
@@ -38,7 +40,11 @@ namespace BLL.Services
             _groupRepo = groupRepo;
             _groupMemberRepo = groupMemberRepo;
             _jiraApiService = jiraApiService;
-            _dataProtector = dataProtectionProvider.CreateProtector("JiraApiToken");
+
+            // Derive a stable 256-bit AES key from the JWT secret using SHA-256.
+            // This is stable across restarts (unlike IDataProtector ephemeral keys).
+            var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
+            _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
         }
 
         // ============================================================================
@@ -92,12 +98,47 @@ namespace BLL.Services
 
         private string EncryptToken(string token)
         {
-            return _dataProtector.Protect(token);
+            var plaintext = Encoding.UTF8.GetBytes(token.Trim());
+            var nonce = new byte[AesGcm.NonceByteSizes.MaxSize];   // 12 bytes
+            var tag   = new byte[AesGcm.TagByteSizes.MaxSize];     // 16 bytes
+            var ciphertext = new byte[plaintext.Length];
+
+            RandomNumberGenerator.Fill(nonce);
+
+            using var aes = new AesGcm(_encryptionKey, AesGcm.TagByteSizes.MaxSize);
+            aes.Encrypt(nonce, plaintext, ciphertext, tag);
+
+            // Layout: base64(nonce || tag || ciphertext)
+            var combined = new byte[nonce.Length + tag.Length + ciphertext.Length];
+            nonce.CopyTo(combined, 0);
+            tag.CopyTo(combined, nonce.Length);
+            ciphertext.CopyTo(combined, nonce.Length + tag.Length);
+            return Convert.ToBase64String(combined);
         }
 
         private string DecryptToken(string encryptedToken)
         {
-            return _dataProtector.Unprotect(encryptedToken);
+            try
+            {
+                var data = Convert.FromBase64String(encryptedToken);
+                var nonceSize = AesGcm.NonceByteSizes.MaxSize;  // 12
+                var tagSize   = AesGcm.TagByteSizes.MaxSize;     // 16
+
+                var nonce      = data[..nonceSize];
+                var tag        = data[nonceSize..(nonceSize + tagSize)];
+                var ciphertext = data[(nonceSize + tagSize)..];
+                var plaintext  = new byte[ciphertext.Length];
+
+                using var aes = new AesGcm(_encryptionKey, AesGcm.TagByteSizes.MaxSize);
+                aes.Decrypt(nonce, ciphertext, tag, plaintext);
+                return Encoding.UTF8.GetString(plaintext);
+            }
+            catch
+            {
+                throw new Exception(
+                    "The stored API token can no longer be decrypted (key mismatch or token corruption). " +
+                    "Please reconfigure the Jira integration with a fresh API token.");
+            }
         }
 
         // ============================================================================
@@ -551,8 +592,40 @@ namespace BLL.Services
                 LastSynced = issue.LastSynced
             };
         }
+
+        // ============================================================================
+        // Group-based wrappers (resolve groupId → projectId internally)
+        // ============================================================================
+
+        private async Task<int> ResolveProjectIdFromGroupAsync(int groupId)
+        {
+            var project = await _projectRepo.GetByGroupIdAsync(groupId);
+            if (project == null)
+                throw new Exception($"No project found for group {groupId}");
+            return project.ProjectId;
+        }
+
+        public async Task<JiraSyncResultDTO> SyncIssuesByGroupAsync(int userId, int groupId)
+        {
+            var projectId = await ResolveProjectIdFromGroupAsync(groupId);
+            return await SyncIssuesAsync(userId, projectId);
+        }
+
+        public async Task<JiraSyncResultDTO> GetSyncStatusByGroupAsync(int userId, int groupId)
+        {
+            var projectId = await ResolveProjectIdFromGroupAsync(groupId);
+            return await GetSyncStatusAsync(userId, projectId);
+        }
+
+        public async Task<List<JiraIssueDTO>> GetProjectIssuesByGroupAsync(int userId, int groupId)
+        {
+            var projectId = await ResolveProjectIdFromGroupAsync(groupId);
+            return await GetProjectIssuesAsync(userId, projectId);
+        }
     }
 }
+
+
 
 
 

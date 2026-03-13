@@ -15,10 +15,20 @@ namespace BLL.Services
     public class IntegrationService : IIntegrationService
     {
         private readonly IUserRepository _userRepository;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
+        private readonly IGithubApiService _githubApiService;
+        private readonly ITokenEncryptionService _tokenEncryption;
 
-        public IntegrationService(IUserRepository userRepository)
+        public IntegrationService(
+            IUserRepository userRepository,
+            IGithubIntegrationRepository githubIntegrationRepository,
+            IGithubApiService githubApiService,
+            ITokenEncryptionService tokenEncryptionService)
         {
             _userRepository = userRepository;
+            _githubIntegrationRepository = githubIntegrationRepository;
+            _githubApiService = githubApiService;
+            _tokenEncryption = tokenEncryptionService;
         }
 
         /// <summary>
@@ -35,6 +45,50 @@ namespace BLL.Services
         }
 
         #region GitHub Integration
+
+        /// <summary>
+        /// BR-058: Configure GitHub integration for a project
+        /// Only admin users can configure integrations
+        /// </summary>
+        public async Task<bool> ConfigureProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto)
+        {
+            // Validating admin privileges
+            await ValidateAdminAccessAsync(adminUserId);
+
+            // Validate the token and repo against the GitHub API before saving
+            await _githubApiService.ValidateConnectionAsync(dto.ApiToken, dto.RepoOwner, dto.RepoName);
+
+            var encryptedToken = _tokenEncryption.Encrypt(dto.ApiToken);
+
+            var existingIntegration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+
+            if (existingIntegration == null)
+            {
+                var integration = new GithubIntegration
+                {
+                    ProjectId = projectId,
+                    ApiToken = encryptedToken,
+                    RepoOwner = dto.RepoOwner,
+                    RepoName = dto.RepoName,
+                    RepoUrl = dto.RepoUrl,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _githubIntegrationRepository.AddAsync(integration);
+            }
+            else
+            {
+                existingIntegration.ApiToken = encryptedToken;
+                existingIntegration.RepoOwner = dto.RepoOwner;
+                existingIntegration.RepoName = dto.RepoName;
+                existingIntegration.RepoUrl = dto.RepoUrl;
+                existingIntegration.UpdatedAt = DateTime.UtcNow;
+
+                await _githubIntegrationRepository.UpdateAsync(existingIntegration);
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// BR-058: Configure GitHub integration for a user

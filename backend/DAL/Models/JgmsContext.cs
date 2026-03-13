@@ -273,6 +273,8 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.LastSync)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("last_sync");
+            entity.Property(e => e.SyncStatus)
+                .HasColumnName("sync_status");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
             entity.Property(e => e.RepoName)
                 .HasMaxLength(100)
@@ -304,8 +306,6 @@ public partial class JgmsContext : DbContext
 
             entity.HasIndex(e => e.UserId, "idx_group_member_user");
 
-            entity.HasIndex(e => new { e.GroupId, e.UserId }, "unique_group_member").IsUnique();
-
             entity.Property(e => e.MembershipId).HasColumnName("membership_id");
             entity.Property(e => e.GroupId).HasColumnName("group_id");
             entity.Property(e => e.IsLeader)
@@ -315,6 +315,9 @@ public partial class JgmsContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("joined_at");
+            entity.Property(e => e.LeftAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("left_at");
             entity.Property(e => e.UserId).HasColumnName("user_id");
 
             entity.HasOne(d => d.Group).WithMany(p => p.GroupMembers)
@@ -552,6 +555,9 @@ public partial class JgmsContext : DbContext
                 .HasMaxLength(200)
                 .HasColumnName("project_name");
             entity.Property(e => e.StartDate).HasColumnName("start_date");
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasColumnType("project_status");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
@@ -645,6 +651,13 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Introduction).HasColumnName("introduction");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
             entity.Property(e => e.Scope).HasColumnName("scope");
+            entity.Property(e => e.ProductPerspective).HasColumnName("product_perspective");
+            entity.Property(e => e.UserClasses).HasColumnName("user_classes");
+            entity.Property(e => e.OperatingEnvironment).HasColumnName("operating_environment");
+            entity.Property(e => e.AssumptionsDependencies).HasColumnName("assumptions_dependencies");
+            entity.Property(e => e.Status)
+                .HasDefaultValue(DocumentStatus.draft)
+                .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")

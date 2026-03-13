@@ -21,6 +21,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{A1B2C3D4-E
 	ProjectSection(SolutionItems) = preProject
 		docs\placeholder.txt = docs\placeholder.txt
 		docs\jira-integration-testing-guide.md = docs\jira-integration-testing-guide.md
+		docs\deployment-guide.md = docs\deployment-guide.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{FEDCBA09-8765-4321-0987-6543210FEDCB}"
@@ -33,6 +34,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{1234
 		database\scripts\.gitkeep = database\scripts\.gitkeep
 		database\scripts\check_and_fix_leader.sql = database\scripts\check_and_fix_leader.sql
 		database\scripts\diag.sql = database\scripts\diag.sql
+		database\scripts\setup-remote-db.bat = database\scripts\setup-remote-db.bat
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{ABCDEF01-2345-6789-ABCD-EF0123456789}"

@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -19,6 +19,8 @@ public partial class Project
     public DateOnly? StartDate { get; set; }
 
     public DateOnly? EndDate { get; set; }
+
+    public ProjectStatus? Status { get; set; } = ProjectStatus.active;
 
     public DateTime? CreatedAt { get; set; }
 

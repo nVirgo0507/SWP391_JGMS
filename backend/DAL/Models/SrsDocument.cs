@@ -20,7 +20,21 @@ public partial class SrsDocument
 
     public string? Scope { get; set; }
 
+    /// <summary>3.1 — Student-provided product perspective. Auto-generated if null.</summary>
+    public string? ProductPerspective { get; set; }
+
+    /// <summary>3.2 — Student-provided user classes description. Auto-generated if null.</summary>
+    public string? UserClasses { get; set; }
+
+    /// <summary>3.3 — Student-provided operating environment. Auto-generated if null.</summary>
+    public string? OperatingEnvironment { get; set; }
+
+    /// <summary>3.4 — Student-provided assumptions and dependencies. Auto-generated if null.</summary>
+    public string? AssumptionsDependencies { get; set; }
+
     public string? FilePath { get; set; }
+
+    public DocumentStatus Status { get; set; } = DocumentStatus.draft;
 
     public int GeneratedBy { get; set; }
 

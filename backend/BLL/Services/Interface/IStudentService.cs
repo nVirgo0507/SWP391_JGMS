@@ -9,18 +9,22 @@ namespace BLL.Services.Interface
         // View Assigned Tasks
         System.Threading.Tasks.Task<List<TaskResponseDTO>> GetMyTasksAsync(int userId);
         System.Threading.Tasks.Task<TaskResponseDTO?> GetTaskByIdAsync(int taskId, int userId);
-        
+
         // Update Task Status
         System.Threading.Tasks.Task UpdateTaskStatusAsync(int taskId, int userId, UpdateTaskStatusDTO dto);
-        
+
         // View Personal Statistics
         System.Threading.Tasks.Task<PersonalStatisticsDTO> GetPersonalStatisticsAsync(int userId, int? projectId = null);
+        System.Threading.Tasks.Task<TaskStatisticsByStatusDTO> GetTaskStatisticsByStatusAsync(int userId);
         System.Threading.Tasks.Task<List<CommitHistoryDTO>> GetCommitHistoryAsync(int userId, int? projectId = null);
-        
+
         // Profile Management
         System.Threading.Tasks.Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int userId);
         System.Threading.Tasks.Task<AdminDTOs.UserResponseDTO> UpdateMyProfileAsync(int userId, UpdateProfileDTO dto);
-        
+
+        // Group Membership
+        System.Threading.Tasks.Task<MyGroupDTO?> GetMyGroupAsync(int userId);
+
         // SRS Document
         System.Threading.Tasks.Task<List<SrsDocumentDTO>> GetSrsDocumentsByProjectAsync(int projectId, int userId);
         System.Threading.Tasks.Task<SrsDocumentDTO?> GetSrsDocumentByIdAsync(int documentId, int userId);

@@ -10,6 +10,7 @@ namespace DAL.Repositories.Interface
         System.Threading.Tasks.Task AddAsync(Project project);
         System.Threading.Tasks.Task UpdateAsync(Project project);
         System.Threading.Tasks.Task DeleteAsync(int projectId);
+        Task<(bool canDelete, string? reason)> CanDeleteProjectAsync(int projectId);
     }
 }
 

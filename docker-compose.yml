@@ -18,5 +18,24 @@
       timeout: 5s
       retries: 5
 
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jgms_api_container
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=JGMS;Username=admin;Password=123456
+      - Jwt__Key=THIS_IS_A_SUPER_SECRET_KEY_123456
+      - Jwt__Issuer=SWP391_JGMS
+      - Jwt__Audience=SWP391_JGMS_USERS
+      - Jwt__ExpireMinutes=60
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+
 volumes:
   postgres_data:

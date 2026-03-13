@@ -27,6 +27,7 @@ namespace BLL.DTOs
 		[Required]
 		public string Phone { get; set; } = null!;
 
+		[RegularExpression(@"^SE\d{6}$", ErrorMessage = "Student code must start with 'SE' followed by exactly 6 digits (e.g. SE123456)")]
 		public string? StudentCode { get; set; }
 	}
 }

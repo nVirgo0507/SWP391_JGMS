@@ -1,6 +1,7 @@
 ﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace DAL.Repositories
 {
@@ -114,7 +115,7 @@ namespace DAL.Repositories
                 _ => normalized
             };
 
-            // Try to parse to enum
+            // Parse to enum
             if (Enum.TryParse<DAL.Models.TaskStatus>(statusString, true, out var taskStatus))
             {
                 return await _context.Tasks
@@ -122,10 +123,7 @@ namespace DAL.Repositories
                     .CountAsync();
             }
 
-            // If parsing fails, count all tasks for user (fallback)
-            return await _context.Tasks
-                .Where(t => t.AssignedTo == userId)
-                .CountAsync();
+            return 0;
         }
     }
 }

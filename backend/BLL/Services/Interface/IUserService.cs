@@ -23,6 +23,12 @@ namespace BLL.Services.Interface
 		System.Threading.Tasks.Task RegisterAsync(RegisterDTO dto);
 
 		/// <summary>
+		/// Register a new lecturer account.
+		/// Lecturers do not require student code, GitHub username, or Jira account ID.
+		/// </summary>
+		System.Threading.Tasks.Task RegisterLecturerAsync(RegisterLecturerDTO dto);
+
+		/// <summary>
 		/// BR-007: Inactive Users Cannot Login - Validates user is active before login
 		/// Authenticates user with email and password
 		/// Returns user object if credentials are valid, null otherwise

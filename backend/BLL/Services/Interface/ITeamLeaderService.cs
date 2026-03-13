@@ -54,6 +54,12 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<List<RequirementResponseDTO>> ReorderRequirementsAsync(int userId, int groupId, ReorderRequirementsDTO dto);
 
+        /// <summary>
+        /// BR-055: Bulk-import all synced Jira issues that don't already have a linked requirement.
+        /// Skips issues that are already linked. Returns a summary of what was imported.
+        /// </summary>
+        Task<BulkImportFromJiraResultDTO> ImportRequirementsFromJiraAsync(int userId, int groupId);
+
         #endregion
 
         #region Tasks Management
@@ -107,22 +113,42 @@ namespace BLL.Services.Interface
         #region SRS Document Management
 
         /// <summary>
-        /// BR-055: Get SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Get all SRS documents for the leader's group project
         /// </summary>
-        Task<SrsDocumentResponseDTO?> GetGroupSrsDocumentAsync(int userId, int groupId);
+        Task<List<SrsDocumentResponseDTO>> GetGroupSrsDocumentsAsync(int userId, int groupId);
 
         /// <summary>
-        /// BR-055: Create SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Get a single SRS document by ID
         /// </summary>
-        Task<SrsDocumentResponseDTO> CreateSrsDocumentAsync(int userId, int groupId, CreateSrsDocumentDTO dto);
+        Task<SrsDocumentResponseDTO?> GetGroupSrsDocumentAsync(int userId, int groupId, int documentId);
 
         /// <summary>
-        /// BR-055: Update SRS document for the leader's group
-        /// Validates that user is leader of the group
+        /// Generate an SRS document from existing requirements.
+        /// Creates the header record and snapshots each requirement into SRS_INCLUDED_REQUIREMENT.
         /// </summary>
-        Task<SrsDocumentResponseDTO> UpdateSrsDocumentAsync(int userId, int groupId, int srsId, UpdateSrsDocumentDTO dto);
+        Task<SrsDocumentResponseDTO> GenerateSrsDocumentAsync(int userId, int groupId, CreateSrsDocumentDTO dto);
+
+        /// <summary>
+        /// Update SRS document metadata (title, version, intro, scope, status)
+        /// </summary>
+        Task<SrsDocumentResponseDTO> UpdateSrsDocumentAsync(int userId, int groupId, int documentId, UpdateSrsDocumentDTO dto);
+
+        /// <summary>
+        /// Generate a downloadable HTML file of the SRS document
+        /// </summary>
+        Task<(byte[] content, string fileName)> DownloadSrsDocumentAsync(int userId, int groupId, int documentId);
+
+        /// <summary>
+        /// Generate a downloadable Word-compatible (.doc) file of the SRS document
+        /// </summary>
+        Task<(byte[] content, string fileName)> DownloadSrsDocumentAsDocAsync(int userId, int groupId, int documentId);
+
+        /// <summary>
+        /// Regenerate the requirement snapshot of an existing SRS document without creating a new version.
+        /// Replaces all previously included requirements with the newly selected set.
+        /// Also updates the Scope section to reflect the new requirement count.
+        /// </summary>
+        Task<SrsDocumentResponseDTO> RegenerateSrsDocumentAsync(int userId, int groupId, int documentId, RegenerateSrsDocumentDTO dto);
 
         #endregion
     }

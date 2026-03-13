@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,12 +18,18 @@ namespace DAL.Repositories
             return await _context.StudentGroups.FirstOrDefaultAsync(g => g.GroupId == groupId);
         }
 
+        public async Task<StudentGroup?> GetByGroupCodeAsync(string groupCode)
+        {
+            return await _context.StudentGroups.FirstOrDefaultAsync(g => g.GroupCode == groupCode);
+        }
+
         public async Task<StudentGroup?> GetGroupWithDetailsAsync(int groupId)
         {
             return await _context.StudentGroups
                 .Include(g => g.Lecturer)
                 .Include(g => g.Leader)
                 .Include(g => g.GroupMembers)
+                    .ThenInclude(gm => gm.User)
                 .FirstOrDefaultAsync(g => g.GroupId == groupId);
         }
 
@@ -33,6 +39,7 @@ namespace DAL.Repositories
                 .Include(g => g.Lecturer)
                 .Include(g => g.Leader)
                 .Include(g => g.GroupMembers)
+                    .ThenInclude(gm => gm.User)
                 .ToListAsync();
         }
 
@@ -42,6 +49,7 @@ namespace DAL.Repositories
                 .Include(g => g.Lecturer)
                 .Include(g => g.Leader)
                 .Include(g => g.GroupMembers)
+                    .ThenInclude(gm => gm.User)
                 .Where(g => g.LecturerId == lecturerId)
                 .ToListAsync();
         }

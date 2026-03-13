@@ -1,37 +1,60 @@
-﻿﻿using BLL.DTOs.Admin;
+﻿using BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
+using DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Security.Claims;
 
 namespace SWP391_JGMS.Controllers
 {
     /// <summary>
-    /// SECURITY WARNING: This controller currently has NO authentication or authorization.
-    /// Any user can access these endpoints. Before deploying to production:
-    /// 1. Implement JWT authentication in Program.cs
-    /// 2. Add [Authorize(Roles = "admin")] attribute to this controller or individual endpoints
-    /// 3. Configure authentication middleware
-    /// See: https://learn.microsoft.com/en-us/aspnet/core/security/authentication/
+    /// Admin API endpoints — user management, group management, and integration configuration.
+    /// All endpoints require admin role authentication via JWT.
+    ///
+    /// User endpoints accept email or numeric user ID.
+    /// Group endpoints accept group code (e.g. "SE1234") or numeric group ID.
     /// </summary>
     [ApiController]
 	[Authorize(Roles = "admin")]
 	[Route("api/admin")]
+    [Produces("application/json")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;
+        private readonly IIntegrationService _integrationService;
+        private readonly IdentifierResolver _resolver;
+        private readonly ITokenEncryptionService _tokenEncryption;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
 
-        public AdminController(IAdminService adminService)
+        public AdminController(
+            IAdminService adminService,
+            IIntegrationService integrationService,
+            IdentifierResolver resolver,
+            ITokenEncryptionService tokenEncryptionService,
+            IGithubIntegrationRepository githubIntegrationRepository)
         {
             _adminService = adminService;
+            _integrationService = integrationService;
+            _resolver = resolver;
+            _tokenEncryption = tokenEncryptionService;
+            _githubIntegrationRepository = githubIntegrationRepository;
+        }
+
+        /// <summary>Reads the authenticated user's ID from the JWT sub claim.</summary>
+        private int GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            if (int.TryParse(userIdClaim, out var id)) return id;
+            throw new UnauthorizedAccessException("Invalid or missing user identity in token.");
         }
 
         #region User Management
 
         /// <summary>
-        /// BR-053: Admin Full Access - Create a new user (admin, lecturer, or student)
-        /// BR-001: Unique Email Address
-        /// BR-005: Password Strength
-        /// BR-006: Active Status Default
+        /// Create a new user (admin, lecturer, or student).
         /// </summary>
         [HttpPost("users")]
         public async Task<IActionResult> CreateUser([FromBody] CreateUserDTO dto)
@@ -39,70 +62,60 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
                 var user = await _adminService.CreateUserAsync(dto);
-                return CreatedAtAction(nameof(GetUserById), new { userId = user.UserId }, user);
+                return CreatedAtAction(nameof(GetUserById), new { userIdentifier = user.UserId.ToString() }, user);
             }
             catch (Exception ex)
             {
                 var errorMessage = ex.Message;
                 if (ex.InnerException != null)
-                {
                     errorMessage += " | Inner: " + ex.InnerException.Message;
-                }
                 return BadRequest(new { message = errorMessage, stackTrace = ex.StackTrace });
             }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Update user information
-        /// BR-060: Preserve Audit Trail
+        /// Update user information.
+        /// Accepts email or numeric user ID.
         /// </summary>
-        [HttpPut("users/{userId}")]
-        public async Task<IActionResult> UpdateUser(int userId, [FromBody] UpdateUserDTO dto)
+        [HttpPut("users/{userIdentifier}")]
+        public async Task<IActionResult> UpdateUser(string userIdentifier, [FromBody] UpdateUserDTO dto)
         {
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
+                var userId = await _resolver.ResolveUserIdAsync(userIdentifier);
                 var user = await _adminService.UpdateUserAsync(userId, dto);
                 return Ok(user);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Get user by ID
+        /// Get user by email or numeric user ID.
         /// </summary>
-        [HttpGet("users/{userId}")]
-        public async Task<IActionResult> GetUserById(int userId)
+        [HttpGet("users/{userIdentifier}")]
+        public async Task<IActionResult> GetUserById(string userIdentifier)
         {
             try
             {
+                var userId = await _resolver.ResolveUserIdAsync(userIdentifier);
                 var user = await _adminService.GetUserByIdAsync(userId);
                 if (user == null)
-                {
                     return NotFound(new { message = "User not found" });
-                }
                 return Ok(user);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Get all users
+        /// Get all users.
         /// </summary>
         [HttpGet("users")]
         public async Task<IActionResult> GetAllUsers()
@@ -112,14 +125,11 @@ namespace SWP391_JGMS.Controllers
                 var users = await _adminService.GetAllUsersAsync();
                 return Ok(users);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Get users by role
+        /// Get users by role (admin, lecturer, student).
         /// </summary>
         [HttpGet("users/role/{role}")]
         public async Task<IActionResult> GetUsersByRole(string role)
@@ -129,46 +139,59 @@ namespace SWP391_JGMS.Controllers
                 var users = await _adminService.GetUsersByRoleAsync(role);
                 return Ok(users);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Delete user
-        /// BR-059: Cascade Delete Prevention
+        /// Search users by name or email (partial match, case-insensitive).
+        /// Optionally filter by role (admin, lecturer, student).
+        /// Useful for finding users without knowing their numeric ID.
+        /// Example: GET /api/admin/users/search?q=nguyen&amp;role=student
         /// </summary>
-        [HttpDelete("users/{userId}")]
-        public async Task<IActionResult> DeleteUser(int userId)
+        [HttpGet("users/search")]
+        public async Task<IActionResult> SearchUsers([FromQuery] string q, [FromQuery] string? role = null)
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(q))
+                    return BadRequest(new { message = "Query parameter 'q' is required." });
+
+                var users = await _adminService.SearchUsersAsync(q, role);
+                return Ok(users);
+            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Delete user. Accepts email or numeric user ID.
+        /// </summary>
+        [HttpDelete("users/{userIdentifier}")]
+        public async Task<IActionResult> DeleteUser(string userIdentifier)
+        {
+            try
+            {
+                var userId = await _resolver.ResolveUserIdAsync(userIdentifier);
                 await _adminService.DeleteUserAsync(userId);
                 return Ok(new { message = "User deleted successfully" });
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Set user status
-        /// BR-007: Inactive Users Cannot Login
+        /// Set user status (active/inactive). Accepts email or numeric user ID.
         /// </summary>
-        [HttpPatch("users/{userId}/status")]
-        public async Task<IActionResult> SetUserStatus(int userId, [FromBody] SetUserStatusDTO dto)
+        [HttpPatch("users/{userIdentifier}/status")]
+        public async Task<IActionResult> SetUserStatus(string userIdentifier, [FromBody] SetUserStatusDTO dto)
         {
             try
             {
+                var userId = await _resolver.ResolveUserIdAsync(userIdentifier);
                 await _adminService.SetUserStatusAsync(userId, dto.Status);
                 return Ok(new { message = "User status updated successfully" });
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         #endregion
@@ -176,7 +199,7 @@ namespace SWP391_JGMS.Controllers
         #region Student Group Management
 
         /// <summary>
-        /// BR-053: Admin Full Access - Create a new student group
+        /// Create a new student group.
         /// </summary>
         [HttpPost("groups")]
         public async Task<IActionResult> CreateStudentGroup([FromBody] CreateStudentGroupDTO dto)
@@ -184,65 +207,53 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
                 var group = await _adminService.CreateStudentGroupAsync(dto);
-                return CreatedAtAction(nameof(GetStudentGroupById), new { groupId = group.GroupId }, group);
+                return CreatedAtAction(nameof(GetStudentGroupById), new { groupCode = group.GroupCode }, group);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Update student group
-        /// BR-060: Preserve Audit Trail
+        /// Update student group. Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        [HttpPut("groups/{groupId}")]
-        public async Task<IActionResult> UpdateStudentGroup(int groupId, [FromBody] UpdateStudentGroupDTO dto)
+        [HttpPut("groups/{groupCode}")]
+        public async Task<IActionResult> UpdateStudentGroup(string groupCode, [FromBody] UpdateStudentGroupDTO dto)
         {
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
                 var group = await _adminService.UpdateStudentGroupAsync(groupId, dto);
                 return Ok(group);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Get student group by ID
+        /// Get student group by group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        [HttpGet("groups/{groupId}")]
-        public async Task<IActionResult> GetStudentGroupById(int groupId)
+        [HttpGet("groups/{groupCode}")]
+        public async Task<IActionResult> GetStudentGroupById(string groupCode)
         {
             try
             {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
                 var group = await _adminService.GetStudentGroupByIdAsync(groupId);
                 if (group == null)
-                {
                     return NotFound(new { message = "Student group not found" });
-                }
                 return Ok(group);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Get all student groups
+        /// Get all student groups.
         /// </summary>
         [HttpGet("groups")]
         public async Task<IActionResult> GetAllStudentGroups()
@@ -252,71 +263,57 @@ namespace SWP391_JGMS.Controllers
                 var groups = await _adminService.GetAllStudentGroupsAsync();
                 return Ok(groups);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Delete student group
-        /// BR-061: Soft Delete for Groups
+        /// Delete student group. Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
-        [HttpDelete("groups/{groupId}")]
-        public async Task<IActionResult> DeleteStudentGroup(int groupId)
+        [HttpDelete("groups/{groupCode}")]
+        public async Task<IActionResult> DeleteStudentGroup(string groupCode)
         {
             try
             {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
                 await _adminService.DeleteStudentGroupAsync(groupId);
                 return Ok(new { message = "Student group deleted successfully (soft delete)" });
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         #endregion
 
-        #region Lecturer Management
+        #region Lecturer / Student Pickers
 
         /// <summary>
-        /// BR-053: Admin Full Access - Get all lecturers
+        /// Get all active lecturers.
+        /// Use this to populate the lecturer picker when creating a group.
         /// </summary>
         [HttpGet("lecturers")]
         public async Task<IActionResult> GetAllLecturers()
         {
             try
             {
-                var lecturers = await _adminService.GetAllLecturersAsync();
+                var lecturers = await _adminService.GetUsersByRoleAsync("lecturer");
                 return Ok(lecturers);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
-        /// BR-053: Admin Full Access - Assign lecturer to group
+        /// Get all active students who are NOT currently in any group.
+        /// Use this to populate the student picker (leader + members) when creating or filling a group.
         /// </summary>
-        [HttpPut("groups/{groupId}/lecturer")]
-        public async Task<IActionResult> AssignLecturerToGroup(int groupId, [FromBody] AssignLecturerDTO dto)
+        [HttpGet("students/available")]
+        public async Task<IActionResult> GetAvailableStudents()
         {
             try
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
-
-                await _adminService.AssignLecturerToGroupAsync(groupId, dto.LecturerId);
-                return Ok(new { message = "Lecturer assigned to group successfully" });
+                var students = await _adminService.GetAvailableStudentsAsync();
+                return Ok(students);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         #endregion
@@ -324,15 +321,359 @@ namespace SWP391_JGMS.Controllers
         #region Group Member Management
 
         /// <summary>
-        /// BR-053: Admin Full Access - Add student to group
+        /// Add one or more students to a group in a single request.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// Each student identifier can be an email address or a numeric user ID.
+        /// Returns a summary of added students and any failures (with reasons).
         /// </summary>
-        [HttpPost("groups/{groupId}/members/{studentId}")]
-        public async Task<IActionResult> AddStudentToGroup(int groupId, int studentId)
+        [HttpPost("groups/{groupCode}/members")]
+        public async Task<IActionResult> AddStudentsToGroup(string groupCode, [FromBody] AddStudentsToGroupDTO dto)
         {
             try
             {
-                await _adminService.AddStudentToGroupAsync(groupId, studentId);
-                return Ok(new { message = "Student added to group successfully" });
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var result = await _adminService.AddStudentsToGroupAsync(groupId, dto.StudentIdentifiers);
+
+                // Return 207 Multi-Status if some failed, 200 if all succeeded
+                if (result.FailureCount > 0 && result.SuccessCount == 0)
+                    return BadRequest(result);
+                if (result.FailureCount > 0)
+                    return StatusCode(207, result);
+
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Remove student from group.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// Accepts student numeric user ID or email address.
+        /// </summary>
+        [HttpDelete("groups/{groupCode}/members/{studentIdentifier}")]
+        public async Task<IActionResult> RemoveStudentFromGroup(string groupCode, string studentIdentifier)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _adminService.RemoveStudentFromGroupAsync(groupId, studentIdentifier);
+                return Ok(new { message = "Student removed from group successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Clear all members from a group. Only allowed when the group's project is marked as completed.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpDelete("groups/{groupCode}/members")]
+        public async Task<IActionResult> ClearGroupMembers(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                await _adminService.ClearGroupMembersOnCompletionAsync(groupId);
+                return Ok(new { message = "All members removed from group successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        #endregion
+
+        #region User Integration Management (GitHub & Jira)
+
+        /// <summary>
+        /// Configure GitHub integration for a user — sets their github_username.
+        /// Accepts email or numeric user ID.
+        /// </summary>
+        [HttpPost("users/{userIdentifier}/github")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> ConfigureGithub(string userIdentifier, [FromBody] GitHubConfigureRequest request)
+        {
+            try
+            {
+                var targetUserId = await _resolver.ResolveUserIdAsync(userIdentifier);
+                var user = await _integrationService.ConfigureGithubAsync(GetCurrentUserId(), targetUserId, request.GithubUsername);
+                return Ok(user);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Remove GitHub integration for a user — clears their github_username.
+        /// Accepts email or numeric user ID.
+        /// </summary>
+        [HttpDelete("users/{userIdentifier}/github")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> RemoveGithub(string userIdentifier)
+        {
+            try
+            {
+                var targetUserId = await _resolver.ResolveUserIdAsync(userIdentifier);
+                var user = await _integrationService.RemoveGithubAsync(GetCurrentUserId(), targetUserId);
+                return Ok(user);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Configure Jira integration for a user — sets their jira_account_id.
+        /// Accepts email or numeric user ID.
+        /// </summary>
+        [HttpPost("users/{userIdentifier}/jira")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> ConfigureJira(string userIdentifier, [FromBody] JiraConfigureRequest request)
+        {
+            try
+            {
+                var targetUserId = await _resolver.ResolveUserIdAsync(userIdentifier);
+                var user = await _integrationService.ConfigureJiraAsync(GetCurrentUserId(), targetUserId, request.JiraAccountId);
+                return Ok(user);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Remove Jira integration for a user — clears their jira_account_id.
+        /// Accepts email or numeric user ID.
+        /// </summary>
+        [HttpDelete("users/{userIdentifier}/jira")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> RemoveJira(string userIdentifier)
+        {
+            try
+            {
+                var targetUserId = await _resolver.ResolveUserIdAsync(userIdentifier);
+                var user = await _integrationService.RemoveJiraAsync(GetCurrentUserId(), targetUserId);
+                return Ok(user);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get all users with their GitHub/Jira integration status.
+        /// </summary>
+        [HttpGet("integrations")]
+        [ProducesResponseType(typeof(List<IntegrationStatusDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAllIntegrations()
+        {
+            try
+            {
+                var integrations = await _integrationService.GetAllIntegrationsAsync(GetCurrentUserId());
+                return Ok(integrations);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Test integration connectivity (GitHub or Jira).
+        /// Pass integrationType = "GitHub" or "Jira".
+        /// </summary>
+        [HttpPost("integrations/test")]
+        [ProducesResponseType(typeof(IntegrationTestResultDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> TestIntegration([FromQuery] string integrationType)
+        {
+            try
+            {
+                var result = await _integrationService.TestIntegrationAsync(GetCurrentUserId(), integrationType);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        #endregion
+
+        #region Project Management
+
+        /// <summary>
+        /// Create a project for a group. Each group can only have one project.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID in the route.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/project")]
+        [ProducesResponseType(typeof(ProjectResponseDTO), StatusCodes.Status201Created)]
+        public async Task<IActionResult> CreateProject(string groupCode, [FromBody] CreateProjectDTO dto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var project = await _adminService.CreateProjectAsync(groupId, dto);
+                return CreatedAtAction(nameof(GetProjectByGroup), new { groupCode }, project);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get the project for a specific group.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/project")]
+        [ProducesResponseType(typeof(ProjectResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetProjectByGroup(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var project = await _adminService.GetProjectByGroupIdAsync(groupId);
+                if (project == null)
+                    return NotFound(new { message = $"No project found for group '{groupCode}'" });
+                return Ok(project);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Get all projects.
+        /// </summary>
+        [HttpGet("projects")]
+        [ProducesResponseType(typeof(List<ProjectResponseDTO>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAllProjects()
+        {
+            try
+            {
+                var projects = await _adminService.GetAllProjectsAsync();
+                return Ok(projects);
+            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Update a project. Accepts group code (e.g. "SE1234") or numeric group ID to find the project.
+        /// </summary>
+        [HttpPut("groups/{groupCode}/project")]
+        [ProducesResponseType(typeof(ProjectResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> UpdateProject(string groupCode, [FromBody] UpdateProjectDTO dto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var existing = await _adminService.GetProjectByGroupIdAsync(groupId);
+                if (existing == null)
+                    return NotFound(new { message = $"No project found for group '{groupCode}'" });
+
+                var project = await _adminService.UpdateProjectAsync(existing.ProjectId, dto);
+                return Ok(project);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Delete a project. Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpDelete("groups/{groupCode}/project")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> DeleteProject(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var existing = await _adminService.GetProjectByGroupIdAsync(groupId);
+                if (existing == null)
+                    return NotFound(new { message = $"No project found for group '{groupCode}'" });
+
+                await _adminService.DeleteProjectAsync(existing.ProjectId);
+                return Ok(new { message = "Project deleted successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Configure GitHub integration for a project.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/project/integrations/github")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> ConfigureProjectGithub(string groupCode, [FromBody] GitHubIntegrationConfigDTO dto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var project = await _adminService.GetProjectByGroupIdAsync(groupId);
+                if (project == null)
+                    return NotFound(new { message = $"No project found for group '{groupCode}'" });
+
+                await _integrationService.ConfigureProjectGithubAsync(GetCurrentUserId(), project.ProjectId, dto);
+                return Ok(new { message = "GitHub integration for project configured successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        #region Security
+
+        /// <summary>
+        /// Rotates the AES encryption key for all stored GitHub API tokens.
+        ///
+        /// How to use when key is compromised:
+        /// 1. Generate a new 32-byte Base64 key (e.g. via: openssl rand -base64 32)
+        /// 2. Call this endpoint with the new key — all tokens are re-encrypted atomically
+        /// 3. Update the Encryption__Key environment variable on Render to the new key
+        /// 4. Redeploy the app
+        ///
+        /// The old key must still be active (in env var) when calling this endpoint.
+        /// </summary>
+        [HttpPost("security/rotate-encryption-key")]
+        public async Task<IActionResult> RotateEncryptionKey([FromBody] RotateKeyDTO dto)
+        {
+            try
+            {
+                // Validate the new key is a proper 32-byte Base64 string
+                var newKeyBytes = Convert.FromBase64String(dto.NewBase64Key);
+                if (newKeyBytes.Length != 32)
+                    return BadRequest(new { message = "NewBase64Key must be a 32-byte (256-bit) Base64-encoded string." });
+
+                var allIntegrations = await _githubIntegrationRepository.GetAllAsync();
+
+                if (!allIntegrations.Any())
+                    return Ok(new { message = "No GitHub integrations found. Nothing to rotate.", count = 0 });
+
+                foreach (var integration in allIntegrations)
+                {
+                    integration.ApiToken = _tokenEncryption.ReEncrypt(integration.ApiToken, dto.NewBase64Key);
+                    integration.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await _githubIntegrationRepository.UpdateAllAsync(allIntegrations);
+
+                return Ok(new
+                {
+                    message = "Encryption key rotated successfully. Update your Encryption__Key environment variable now.",
+                    tokensRotated = allIntegrations.Count
+                });
+            }
+            catch (FormatException)
+            {
+                return BadRequest(new { message = "NewBase64Key is not a valid Base64 string." });
             }
             catch (Exception ex)
             {
@@ -340,27 +681,7 @@ namespace SWP391_JGMS.Controllers
             }
         }
 
-        /// <summary>
-        /// BR-053: Admin Full Access - Remove student from group
-        /// </summary>
-        [HttpDelete("groups/{groupId}/members/{studentId}")]
-        public async Task<IActionResult> RemoveStudentFromGroup(int groupId, int studentId)
-        {
-            try
-            {
-                await _adminService.RemoveStudentFromGroupAsync(groupId, studentId);
-                return Ok(new { message = "Student removed from group successfully" });
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = ex.Message;
-                if (ex.InnerException != null)
-                {
-                    errorMessage += " | Inner: " + ex.InnerException.Message;
-                }
-                return BadRequest(new { message = errorMessage });
-            }
-        }
+        #endregion
 
         #endregion
     }

@@ -121,4 +121,16 @@ namespace BLL.DTOs.Admin
         [Required]
         public int Order { get; set; }
     }
+
+    /// <summary>
+    /// Result of a bulk import of Jira issues into requirements
+    /// </summary>
+    public class BulkImportFromJiraResultDTO
+    {
+        public int Imported { get; set; }
+        public int Skipped { get; set; }
+        public int Failed { get; set; }
+        public List<RequirementResponseDTO> Requirements { get; set; } = new();
+        public List<string> Errors { get; set; } = new();
+    }
 }

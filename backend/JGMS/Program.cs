@@ -1,8 +1,7 @@
 using BLL.Services;
 using BLL.Services.Interface;
 using DAL.Data;
-using DAL.Models;
-using DAL.Repositories;
+using DAL.Models;using DAL.Repositories;
 using DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +22,31 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
+
+        // CORS — allow frontend apps to call the API
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowFrontend", policy =>
+            {
+                var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
+                if (allowedOrigins != null && allowedOrigins.Length > 0)
+                {
+                    policy.WithOrigins(allowedOrigins)
+                          .AllowAnyHeader()
+                          .AllowAnyMethod()
+                          .AllowCredentials();
+                }
+                else
+                {
+                    // Default: allow common dev ports + any origin for staging
+                    policy.SetIsOriginAllowed(_ => true)
+                          .AllowAnyHeader()
+                          .AllowAnyMethod()
+                          .AllowCredentials();
+                }
+            });
+        });
+
         builder.Services.AddControllers()
             .AddJsonOptions(options =>
             {
@@ -36,8 +60,17 @@ public class Program
 			c.SwaggerDoc("v1", new OpenApiInfo
 			{
 				Title = "SWP391 JGMS API",
-				Version = "v1"
+				Version = "v1",
+				Description = "Jira & GitHub Management System — API for frontend integration.\n\n" +
+					"**Auth flow:** POST `/api/auth/login` → get `accessToken` → " +
+					"click 'Authorize' button above → paste token."
 			});
+
+			// Include XML comments for endpoint descriptions
+			var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+			var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+			if (File.Exists(xmlPath))
+				c.IncludeXmlComments(xmlPath);
 
 			c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
 			{
@@ -68,7 +101,11 @@ public class Program
 		});
 
 		var jwtSettings = builder.Configuration.GetSection("Jwt");
-		var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
+		var jwtKeyValue = jwtSettings["Key"];
+		if (string.IsNullOrWhiteSpace(jwtKeyValue))
+			throw new InvalidOperationException(
+				"Jwt:Key is not configured. Set the Jwt__Key environment variable (Render) or add it to appsettings.Development.json (local).");
+		var key = Encoding.UTF8.GetBytes(jwtKeyValue);
 
 		builder.Services.AddAuthentication(options =>
 		{
@@ -111,7 +148,18 @@ public class Program
 
 		builder.Services.AddDbContext<JgmsContext>(options =>
 	        options.UseNpgsql(
-		    builder.Configuration.GetConnectionString("DefaultConnection")
+		    builder.Configuration.GetConnectionString("DefaultConnection"),
+		    npgsqlOptions => npgsqlOptions
+		        .MapEnum<UserRole>("user_role")
+		        .MapEnum<UserStatus>("user_status")
+		        .MapEnum<DAL.Models.TaskStatus>("task_status")
+		        .MapEnum<PriorityLevel>("priority_level")
+		        .MapEnum<RequirementType>("requirement_type")
+		        .MapEnum<JiraPriority>("jira_priority")
+		        .MapEnum<DocumentStatus>("document_status")
+		        .MapEnum<ProjectStatus>("project_status")
+		        .MapEnum<SyncStatus>("sync_status")
+		        .MapEnum<ReportType>("report_type")
 	    ));
 
 		// Register repositories
@@ -126,12 +174,14 @@ public class Program
 		builder.Services.AddScoped<IJiraIntegrationRepository, JiraIntegrationRepository>();
 		builder.Services.AddScoped<IJiraIssueRepository, JiraIssueRepository>();
 		builder.Services.AddScoped<IRequirementRepository, RequirementRepository>();
+		builder.Services.AddScoped<IGithubIntegrationRepository, GithubIntegrationRepository>();
+		builder.Services.AddScoped<IGithubCommitRepository, GithubCommitRepository>();
 
 		// Register HttpClient for Jira API
 		builder.Services.AddHttpClient();
 
-		// Register Data Protection for encrypting API tokens
-		builder.Services.AddDataProtection();
+		// Register token encryption service (AES-256 with a fixed key — survives restarts)
+		builder.Services.AddSingleton<BLL.Services.Interface.ITokenEncryptionService, BLL.Services.TokenEncryptionService>();
 
 		// Register services
 		builder.Services.AddScoped<IUserService, UserService>();
@@ -148,6 +198,11 @@ public class Program
 		// Jira Integration services
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
+		// Github Integration services
+		builder.Services.AddScoped<IGithubApiService, GithubApiService>();
+		builder.Services.AddScoped<IGithubIntegrationService, GithubIntegrationService>();
+		// Identifier resolver — converts group codes, emails, etc. to internal IDs
+		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
 
         var app = builder.Build();
 
@@ -157,17 +212,40 @@ public class Program
 			DbInitializer.SeedAdmin(context);
 		}
 
-		// Configure the HTTP request pipeline.
-		if (app.Environment.IsDevelopment())
-        {
-            app.UseSwagger();
-            app.UseSwaggerUI();
-        }
+		// Run SQL migrations on every startup — only unapplied files are executed
+		using (var scope = app.Services.CreateScope())
+		{
+			var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+			var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 
-        app.UseHttpsRedirection();
+			// Resolve the migrations folder relative to the app's content root
+			var migrationsFolder = Path.Combine(app.Environment.ContentRootPath, "migrations");
+			MigrationRunner.Run(connectionString, migrationsFolder, logger);
+		}
+
+		// Swagger — available in all environments for team access
+		app.UseSwagger();
+		app.UseSwaggerUI(c =>
+		{
+			c.SwaggerEndpoint("/swagger/v1/swagger.json", "SWP391 JGMS API v1");
+			c.RoutePrefix = "swagger";
+		});
+
+		if (!app.Environment.IsDevelopment())
+		{
+			app.UseHttpsRedirection();
+		}
+		app.UseCors("AllowFrontend");
 		app.UseAuthentication();
 		app.UseAuthorization();
         app.MapControllers();
+
+        // Initialize database
+        using (var scope = app.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<JgmsContext>();
+            dbContext.Database.EnsureCreated();
+        }
 
         app.Run();
     }
