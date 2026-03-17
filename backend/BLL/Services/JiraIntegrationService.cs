@@ -438,7 +438,22 @@ namespace BLL.Services
                         }
                         else
                         {
+                            var previousProjectId = existingIssue.ProjectId;
+
+                            // Keep issue ownership aligned with the project currently being synced.
+                            // This prevents "updated but not visible in this project" confusion when
+                            // legacy rows were previously attached to another project.
+                            if (existingIssue.ProjectId != projectId)
+                            {
+                                existingIssue.ProjectId = projectId;
+                                result.Warnings.Add(
+                                    $"Issue {jiraIssue.IssueKey} was reassigned from project {previousProjectId} to {projectId} during sync.");
+                            }
+
                             // Update existing issue
+                            existingIssue.IssueKey = jiraIssue.IssueKey;
+                            existingIssue.JiraId = jiraIssue.JiraId;
+                            existingIssue.IssueType = jiraIssue.IssueType;
                             existingIssue.Summary = jiraIssue.Summary;
                             existingIssue.Description = jiraIssue.Description;
                             existingIssue.Status = jiraIssue.Status;
