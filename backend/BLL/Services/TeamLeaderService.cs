@@ -1131,6 +1131,8 @@ namespace BLL.Services
             Priority = ToJiraPriority(task.Priority),
             DueDate = task.DueDate,
             CompletedAt = task.CompletedAt,
+            SprintId = task.JiraIssue?.SprintId,
+            SprintName = task.JiraIssue?.SprintName,
             CreatedAt = task.CreatedAt,
             UpdatedAt = task.UpdatedAt
         };

@@ -15,6 +15,9 @@
         public string Status { get; set; } = null!;
         public string? AssigneeJiraId { get; set; }
         public string? AssigneeName { get; set; }
+        public int? SprintId { get; set; }
+        public string? SprintName { get; set; }
+        public string? SprintState { get; set; }
         public DateTime? CreatedDate { get; set; }
         public DateTime? UpdatedDate { get; set; }
         public DateTime? LastSynced { get; set; }

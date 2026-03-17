@@ -28,6 +28,12 @@ public partial class JiraIssue
 
     public string? AssigneeJiraId { get; set; }
 
+    public int? SprintId { get; set; }
+
+    public string? SprintName { get; set; }
+
+    public string? SprintState { get; set; }
+
     public DateTime? CreatedDate { get; set; }
 
     public DateTime? UpdatedDate { get; set; }

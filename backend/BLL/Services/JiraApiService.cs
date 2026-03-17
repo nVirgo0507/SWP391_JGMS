@@ -171,8 +171,7 @@ namespace BLL.Services
             {
                 jql = $"project={projectKey} ORDER BY updated DESC",
                 maxResults = 1000,
-                fields = new[] { "summary", "description", "status", "issuetype",
-                                  "priority", "assignee", "created", "updated" }
+                fields = new[] { "*all" }
             };
             var httpContent = new StringContent(
                 JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
@@ -388,7 +387,72 @@ namespace BLL.Services
             if (fields.TryGetProperty("updated", out var updated))
                 dto.UpdatedDate = DateTime.Parse(updated.GetString() ?? DateTime.UtcNow.ToString());
 
+            if (TryExtractSprint(fields, out var sprintId, out var sprintName, out var sprintState))
+            {
+                dto.SprintId = sprintId;
+                dto.SprintName = sprintName;
+                dto.SprintState = sprintState;
+            }
+
             return dto;
+        }
+
+        private static bool TryExtractSprint(JsonElement fields, out int? sprintId, out string? sprintName, out string? sprintState)
+        {
+            sprintId = null;
+            sprintName = null;
+            sprintState = null;
+
+            foreach (var property in fields.EnumerateObject())
+            {
+                if (!property.Name.StartsWith("customfield_", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var value = property.Value;
+
+                if (value.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in value.EnumerateArray())
+                    {
+                        if (TryMapSprintObject(item, out sprintId, out sprintName, out sprintState))
+                            return true;
+                    }
+                }
+                else if (value.ValueKind == JsonValueKind.Object)
+                {
+                    if (TryMapSprintObject(value, out sprintId, out sprintName, out sprintState))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryMapSprintObject(JsonElement candidate, out int? sprintId, out string? sprintName, out string? sprintState)
+        {
+            sprintId = null;
+            sprintName = null;
+            sprintState = null;
+
+            if (candidate.ValueKind != JsonValueKind.Object)
+                return false;
+
+            var hasName = candidate.TryGetProperty("name", out var nameProperty);
+            var hasState = candidate.TryGetProperty("state", out var stateProperty);
+            var hasId = candidate.TryGetProperty("id", out var idProperty);
+
+            if (!hasId || (!hasName && !hasState))
+                return false;
+
+            if (idProperty.ValueKind == JsonValueKind.Number && idProperty.TryGetInt32(out var numericId))
+                sprintId = numericId;
+            else if (idProperty.ValueKind == JsonValueKind.String && int.TryParse(idProperty.GetString(), out var stringId))
+                sprintId = stringId;
+
+            sprintName = hasName ? nameProperty.GetString() : null;
+            sprintState = hasState ? stateProperty.GetString() : null;
+
+            return sprintId.HasValue || !string.IsNullOrWhiteSpace(sprintName);
         }
 
         private static string ExtractTextFromAdf(JsonElement description)
