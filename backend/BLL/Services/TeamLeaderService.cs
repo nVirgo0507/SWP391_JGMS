@@ -95,10 +95,13 @@ namespace BLL.Services
             {
                 ProjectId = project.ProjectId,
                 GroupId = project.GroupId,
+                GroupCode = project.Group?.GroupCode,
+                GroupName = project.Group?.GroupName,
                 ProjectName = project.ProjectName,
                 Description = project.Description,
                 StartDate = project.StartDate,
                 EndDate = project.EndDate,
+                Status = project.Status?.ToString(),
                 CreatedAt = project.CreatedAt,
                 UpdatedAt = project.UpdatedAt
             };
@@ -614,6 +617,9 @@ namespace BLL.Services
             if (dto.AssignedTo.HasValue && !await _memberRepository.IsMemberOfGroupAsync(groupId, dto.AssignedTo.Value))
                 throw new Exception("The specified assignee is not a member of this group.");
 
+            // Auto-link to the local requirement mapped to this Jira issue (if one exists)
+            var linkedRequirement = await _requirementRepository.GetByJiraIssueIdAsync(jiraIssue.JiraIssueId);
+
             // Map Jira priority to internal enum
             PriorityLevel priority = PriorityLevel.medium;
             if (!string.IsNullOrEmpty(jiraIssue.Priority?.ToString()))
@@ -633,6 +639,7 @@ namespace BLL.Services
             {
                 Title = dto.TitleOverride ?? jiraIssue.Summary,
                 Description = jiraIssue.Description,
+                RequirementId = linkedRequirement?.RequirementId,
                 JiraIssueId = jiraIssue.JiraIssueId,
                 AssignedTo = dto.AssignedTo,
                 DueDate = dto.DueDate,
