@@ -426,6 +426,9 @@ namespace BLL.Services
                                     : (JiraPriority?)null,
                                 Status = jiraIssue.Status,
                                 AssigneeJiraId = jiraIssue.AssigneeJiraId,
+                                SprintId = jiraIssue.SprintId,
+                                SprintName = jiraIssue.SprintName,
+                                SprintState = jiraIssue.SprintState,
                                 CreatedDate = jiraIssue.CreatedDate,
                                 UpdatedDate = jiraIssue.UpdatedDate
                             };
@@ -435,7 +438,22 @@ namespace BLL.Services
                         }
                         else
                         {
+                            var previousProjectId = existingIssue.ProjectId;
+
+                            // Keep issue ownership aligned with the project currently being synced.
+                            // This prevents "updated but not visible in this project" confusion when
+                            // legacy rows were previously attached to another project.
+                            if (existingIssue.ProjectId != projectId)
+                            {
+                                existingIssue.ProjectId = projectId;
+                                result.Warnings.Add(
+                                    $"Issue {jiraIssue.IssueKey} was reassigned from project {previousProjectId} to {projectId} during sync.");
+                            }
+
                             // Update existing issue
+                            existingIssue.IssueKey = jiraIssue.IssueKey;
+                            existingIssue.JiraId = jiraIssue.JiraId;
+                            existingIssue.IssueType = jiraIssue.IssueType;
                             existingIssue.Summary = jiraIssue.Summary;
                             existingIssue.Description = jiraIssue.Description;
                             existingIssue.Status = jiraIssue.Status;
@@ -443,6 +461,9 @@ namespace BLL.Services
                                 ? Enum.Parse<JiraPriority>(jiraIssue.Priority.ToLower())
                                 : (JiraPriority?)null;
                             existingIssue.AssigneeJiraId = jiraIssue.AssigneeJiraId;
+                            existingIssue.SprintId = jiraIssue.SprintId;
+                            existingIssue.SprintName = jiraIssue.SprintName;
+                            existingIssue.SprintState = jiraIssue.SprintState;
                             existingIssue.UpdatedDate = jiraIssue.UpdatedDate;
 
                             await _jiraIssueRepo.UpdateAsync(existingIssue);
@@ -540,6 +561,9 @@ namespace BLL.Services
                 Priority = i.Priority?.ToString(),
                 Status = i.Status,
                 AssigneeJiraId = i.AssigneeJiraId,
+                SprintId = i.SprintId,
+                SprintName = i.SprintName,
+                SprintState = i.SprintState,
                 CreatedDate = i.CreatedDate,
                 UpdatedDate = i.UpdatedDate,
                 LastSynced = i.LastSynced
@@ -587,6 +611,9 @@ namespace BLL.Services
                 Priority = issue.Priority?.ToString(),
                 Status = issue.Status,
                 AssigneeJiraId = issue.AssigneeJiraId,
+                SprintId = issue.SprintId,
+                SprintName = issue.SprintName,
+                SprintState = issue.SprintState,
                 CreatedDate = issue.CreatedDate,
                 UpdatedDate = issue.UpdatedDate,
                 LastSynced = issue.LastSynced

@@ -95,10 +95,13 @@ namespace BLL.Services
             {
                 ProjectId = project.ProjectId,
                 GroupId = project.GroupId,
+                GroupCode = project.Group?.GroupCode,
+                GroupName = project.Group?.GroupName,
                 ProjectName = project.ProjectName,
                 Description = project.Description,
                 StartDate = project.StartDate,
                 EndDate = project.EndDate,
+                Status = project.Status?.ToString(),
                 CreatedAt = project.CreatedAt,
                 UpdatedAt = project.UpdatedAt
             };
@@ -305,10 +308,23 @@ namespace BLL.Services
             if (requirement.ProjectId != project.ProjectId)
                 throw new Exception("Access denied. This requirement does not belong to your group's project.");
 
-            // If linked to Jira, delete the issue in Jira too
-            if (requirement.JiraIssueId.HasValue)
+            // Preserve SRS history integrity: this requirement is part of one or more generated snapshots.
+            if (await _requirementRepository.HasSrsReferencesAsync(requirementId))
             {
-                var jiraIssue = await _jiraIssueRepository.GetByIdAsync(requirement.JiraIssueId.Value);
+                throw new Exception("Cannot delete requirement because it is referenced by generated SRS documents. Remove or regenerate those SRS links first.");
+            }
+
+            // Detach tasks first so requirement deletion does not violate FK constraints.
+            await _requirementRepository.UnlinkTasksAsync(requirementId);
+
+            var linkedJiraIssueId = requirement.JiraIssueId;
+
+            await _requirementRepository.DeleteAsync(requirementId);
+
+            // If linked to Jira, delete the issue in Jira too
+            if (linkedJiraIssueId.HasValue)
+            {
+                var jiraIssue = await _jiraIssueRepository.GetByIdAsync(linkedJiraIssueId.Value);
                 if (jiraIssue != null)
                 {
                     var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
@@ -331,8 +347,6 @@ namespace BLL.Services
                     }
                 }
             }
-
-            await _requirementRepository.DeleteAsync(requirementId);
         }
 
         /// <summary>
@@ -365,7 +379,7 @@ namespace BLL.Services
 
         /// <summary>
         /// BR-055: Bulk-import all synced Jira issues that don't already have a linked requirement.
-        /// Skips issues that are already linked. Auto-generates requirement codes (REQ-001, REQ-002, …).
+        /// Skips issues that are already linked. Auto-generates requirement codes (REQ-P{projectId}-001, ...).
         /// </summary>
         public async Task<BulkImportFromJiraResultDTO> ImportRequirementsFromJiraAsync(int userId, int groupId)
         {
@@ -387,11 +401,13 @@ namespace BLL.Services
                 .Select(r => r.JiraIssueId!.Value)
                 .ToHashSet();
 
-            // Build a starting code counter (e.g. if REQ-007 exists, next is REQ-008)
+            // Build a starting code counter for this project (e.g. REQ-P5-007 -> next is REQ-P5-008)
+            var projectCodePrefix = $"REQ-P{project.ProjectId}-";
             var existingCodes = existingRequirements
                 .Select(r => r.RequirementCode)
-                .Where(c => c.StartsWith("REQ-") && int.TryParse(c[4..], out _))
-                .Select(c => int.Parse(c[4..]))
+                .Where(c => c.StartsWith(projectCodePrefix, StringComparison.OrdinalIgnoreCase)
+                            && int.TryParse(c[projectCodePrefix.Length..], out _))
+                .Select(c => int.Parse(c[projectCodePrefix.Length..]))
                 .ToList();
             var nextCodeNum = existingCodes.Any() ? existingCodes.Max() + 1 : 1;
 
@@ -407,12 +423,12 @@ namespace BLL.Services
 
                 try
                 {
-                    var code = $"REQ-{nextCodeNum:D3}";
+                    var code = $"{projectCodePrefix}{nextCodeNum:D3}";
                     // Make sure it's unique (edge case: someone manually created a matching code)
                     while (await _requirementRepository.ExistsByCodeAsync(project.ProjectId, code))
                     {
                         nextCodeNum++;
-                        code = $"REQ-{nextCodeNum:D3}";
+                        code = $"{projectCodePrefix}{nextCodeNum:D3}";
                     }
 
                     var requirement = new Requirement
@@ -601,6 +617,9 @@ namespace BLL.Services
             if (dto.AssignedTo.HasValue && !await _memberRepository.IsMemberOfGroupAsync(groupId, dto.AssignedTo.Value))
                 throw new Exception("The specified assignee is not a member of this group.");
 
+            // Auto-link to the local requirement mapped to this Jira issue (if one exists)
+            var linkedRequirement = await _requirementRepository.GetByJiraIssueIdAsync(jiraIssue.JiraIssueId);
+
             // Map Jira priority to internal enum
             PriorityLevel priority = PriorityLevel.medium;
             if (!string.IsNullOrEmpty(jiraIssue.Priority?.ToString()))
@@ -620,6 +639,7 @@ namespace BLL.Services
             {
                 Title = dto.TitleOverride ?? jiraIssue.Summary,
                 Description = jiraIssue.Description,
+                RequirementId = linkedRequirement?.RequirementId,
                 JiraIssueId = jiraIssue.JiraIssueId,
                 AssignedTo = dto.AssignedTo,
                 DueDate = dto.DueDate,
@@ -1111,6 +1131,8 @@ namespace BLL.Services
             Priority = ToJiraPriority(task.Priority),
             DueDate = task.DueDate,
             CompletedAt = task.CompletedAt,
+            SprintId = task.JiraIssue?.SprintId,
+            SprintName = task.JiraIssue?.SprintName,
             CreatedAt = task.CreatedAt,
             UpdatedAt = task.UpdatedAt
         };

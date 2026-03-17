@@ -1,0 +1,4 @@
+ALTER TABLE jira_issue
+    ADD COLUMN IF NOT EXISTS sprint_id INTEGER,
+    ADD COLUMN IF NOT EXISTS sprint_name VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS sprint_state VARCHAR(50);

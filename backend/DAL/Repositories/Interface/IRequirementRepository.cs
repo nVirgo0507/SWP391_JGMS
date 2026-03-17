@@ -11,6 +11,8 @@ namespace DAL.Repositories.Interface
         System.Threading.Tasks.Task<Requirement?> GetByIdAsync(int requirementId);
         System.Threading.Tasks.Task<Requirement?> GetByJiraIssueIdAsync(int jiraIssueId);
         System.Threading.Tasks.Task<bool> ExistsByCodeAsync(int projectId, string code, int? excludeId = null);
+        System.Threading.Tasks.Task<bool> HasSrsReferencesAsync(int requirementId);
+        System.Threading.Tasks.Task<int> UnlinkTasksAsync(int requirementId);
         System.Threading.Tasks.Task AddAsync(Requirement requirement);
         System.Threading.Tasks.Task UpdateAsync(Requirement requirement);
         System.Threading.Tasks.Task DeleteAsync(int requirementId);
