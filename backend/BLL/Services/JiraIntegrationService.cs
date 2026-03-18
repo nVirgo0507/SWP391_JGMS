@@ -543,12 +543,7 @@ namespace BLL.Services
 
             var issues = await _jiraIssueRepo.GetByProjectIdAsync(projectId);
 
-            // If student (not leader), filter to assigned issues only
-            if (user.Role == UserRole.student && !await IsUserProjectLeaderAsync(userId, projectId))
-            {
-                var userJiraId = user.JiraAccountId;
-                issues = issues.Where(i => i.AssigneeJiraId == userJiraId).ToList();
-            }
+            // Group members can view all project issues (not only assigned ones).
 
             return issues.Select(i => new JiraIssueDTO
             {
@@ -589,15 +584,6 @@ namespace BLL.Services
             if (!hasAccess)
             {
                 throw new UnauthorizedAccessException("You don't have permission to view this issue");
-            }
-
-            // If student, only show if assigned to them
-            if (user.Role == UserRole.student && !await IsUserProjectLeaderAsync(userId, issue.ProjectId))
-            {
-                if (issue.AssigneeJiraId != user.JiraAccountId)
-                {
-                    throw new UnauthorizedAccessException("You can only view issues assigned to you");
-                }
             }
 
             return new JiraIssueDTO
@@ -649,6 +635,7 @@ namespace BLL.Services
             var projectId = await ResolveProjectIdFromGroupAsync(groupId);
             return await GetProjectIssuesAsync(userId, projectId);
         }
+
     }
 }
 

@@ -4,6 +4,7 @@ using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
+using System.Text.RegularExpressions;
 
 namespace BLL.Services
 {
@@ -15,6 +16,7 @@ namespace BLL.Services
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ISrsDocumentRepository _srsRepository;
         private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IJiraIssueRepository _jiraIssueRepository;
 
         public StudentService(
             IUserRepository userRepository,
@@ -22,7 +24,8 @@ namespace BLL.Services
             ICommitRepository commitRepository,
             IPersonalTaskStatisticRepository statisticRepository,
             ISrsDocumentRepository srsRepository,
-            IGroupMemberRepository groupMemberRepository)
+            IGroupMemberRepository groupMemberRepository,
+            IJiraIssueRepository jiraIssueRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
@@ -30,6 +33,7 @@ namespace BLL.Services
             _statisticRepository = statisticRepository;
             _srsRepository = srsRepository;
             _groupMemberRepository = groupMemberRepository;
+            _jiraIssueRepository = jiraIssueRepository;
         }
 
         #region View Assigned Tasks
@@ -104,6 +108,102 @@ namespace BLL.Services
             // Example: await _jiraService.UpdateIssueAsync(task.JiraIssueId, dto.Status, dto.Comment, dto.WorkHours);
 
             await _taskRepository.UpdateAsync(task);
+        }
+
+        public async System.Threading.Tasks.Task<CommitLineSuggestionResponseDTO> GenerateCommitLineSuggestionAsync(
+            int userId,
+            CommitLineSuggestionRequestDTO dto)
+        {
+            if (dto.TaskId == null && string.IsNullOrWhiteSpace(dto.JiraIssueKey))
+            {
+                throw new Exception("Provide either TaskId or JiraIssueKey");
+            }
+
+            DAL.Models.Task? task = null;
+            JiraIssue? jiraIssue = null;
+
+            if (dto.TaskId.HasValue)
+            {
+                task = await _taskRepository.GetByIdAsync(dto.TaskId.Value);
+                if (task == null)
+                {
+                    throw new Exception("Task not found");
+                }
+                jiraIssue = task.JiraIssue;
+            }
+            else
+            {
+                var normalizedIssueKey = dto.JiraIssueKey!.Trim().ToUpperInvariant();
+                jiraIssue = await _jiraIssueRepository.GetByIssueKeyAsync(normalizedIssueKey)
+                    ?? await _jiraIssueRepository.GetByIssueKeyAsync(dto.JiraIssueKey!.Trim());
+
+                if (jiraIssue == null)
+                {
+                    throw new Exception("Jira issue not found");
+                }
+
+                task = await _taskRepository.GetByJiraIssueIdAsync(jiraIssue.JiraIssueId);
+            }
+
+            if (task != null)
+            {
+                if (!task.AssignedTo.HasValue || task.AssignedTo.Value != userId)
+                {
+                    throw new UnauthorizedAccessException("You do not have permission to view this task");
+                }
+            }
+            else if (jiraIssue != null)
+            {
+                var currentUser = await _userRepository.GetByIdAsync(userId);
+                var isLeaderInProject = await IsUserLeaderOfProjectAsync(userId, jiraIssue.ProjectId);
+                var isAssignee = JiraAccountIdMatches(currentUser?.JiraAccountId, jiraIssue.AssigneeJiraId);
+
+                if (currentUser == null || (!isLeaderInProject && !isAssignee))
+                {
+                    throw new UnauthorizedAccessException("You do not have permission to view this Jira issue");
+                }
+            }
+
+            var issueKey = !string.IsNullOrWhiteSpace(jiraIssue?.IssueKey)
+                ? jiraIssue!.IssueKey.Trim()
+                : task != null
+                    ? $"TASK-{task.TaskId}"
+                    : "TASK";
+
+            var title = !string.IsNullOrWhiteSpace(task?.Title)
+                ? task!.Title
+                : jiraIssue?.Summary ?? "update task";
+
+            var type = NormalizeCommitType(dto.Type) ?? InferCommitType(task, jiraIssue, title);
+            var scopeSegment = BuildScopeSegment(dto.Scope);
+            var subject = BuildCommitSubject(title);
+            var issuePrefix = dto.IncludeIssueKey ? $"[{issueKey}] " : string.Empty;
+
+            var primaryLine = $"{type}{scopeSegment}: {issuePrefix}{subject}";
+            var escapedPrimaryLine = EscapeForDoubleQuotedArg(primaryLine);
+            var gitCommitCommand = $"git commit -m \"{escapedPrimaryLine}\"";
+            var gitHubCommand = $"git add . && {gitCommitCommand} && git push origin HEAD";
+
+            var taskIdSuffix = task != null ? $" {task.TaskId}" : string.Empty;
+            var alternatives = new List<string>
+            {
+                $"{type}{scopeSegment}: {subject}",
+                $"{type}: {issuePrefix}{subject}",
+                $"chore{scopeSegment}: {issuePrefix}update task{taskIdSuffix}"
+            };
+
+            return new CommitLineSuggestionResponseDTO
+            {
+                TaskId = task?.TaskId,
+                JiraIssueKey = jiraIssue?.IssueKey,
+                CommitLine = primaryLine,
+                GitCommitCommand = gitCommitCommand,
+                GitHubCommand = gitHubCommand,
+                Alternatives = alternatives
+                    .Where(a => !string.Equals(a, primaryLine, StringComparison.Ordinal))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList()
+            };
         }
 
         #endregion
@@ -420,6 +520,99 @@ namespace BLL.Services
                 GeneratedByName = document.GeneratedByNavigation?.FullName,
                 GeneratedAt = document.GeneratedAt
             };
+        }
+
+        private static string InferCommitType(DAL.Models.Task? task, JiraIssue? jiraIssue, string title)
+        {
+            var issueType = (jiraIssue?.IssueType ?? task?.JiraIssue?.IssueType)?.Trim().ToLowerInvariant();
+            var loweredTitle = title.Trim().ToLowerInvariant();
+
+            if (issueType == "bug" || loweredTitle.StartsWith("fix") || loweredTitle.Contains("bug"))
+            {
+                return "fix";
+            }
+
+            if (issueType == "story" || issueType == "feature" || loweredTitle.StartsWith("add") || loweredTitle.StartsWith("implement"))
+            {
+                return "feat";
+            }
+
+            if (issueType == "test")
+            {
+                return "test";
+            }
+
+            if (issueType == "documentation" || loweredTitle.StartsWith("doc"))
+            {
+                return "docs";
+            }
+
+            return "chore";
+        }
+
+        private static string EscapeForDoubleQuotedArg(string value)
+        {
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        private async Task<bool> IsUserLeaderOfProjectAsync(int userId, int projectId)
+        {
+            var memberships = await _groupMemberRepository.GetGroupsByStudentIdAsync(userId);
+            return memberships.Any(m =>
+                m.LeftAt == null &&
+                (m.IsLeader ?? false) &&
+                m.Group?.Project?.ProjectId == projectId);
+        }
+
+        private static bool JiraAccountIdMatches(string? userJiraAccountId, string? assigneeJiraId)
+        {
+            if (string.IsNullOrWhiteSpace(userJiraAccountId) || string.IsNullOrWhiteSpace(assigneeJiraId))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                userJiraAccountId.Trim(),
+                assigneeJiraId.Trim(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string? NormalizeCommitType(string? input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return null;
+            }
+
+            var normalized = input.Trim().ToLowerInvariant();
+            var allowed = new HashSet<string> { "feat", "fix", "docs", "refactor", "test", "chore" };
+
+            return allowed.Contains(normalized) ? normalized : null;
+        }
+
+        private static string BuildScopeSegment(string? scope)
+        {
+            if (string.IsNullOrWhiteSpace(scope))
+            {
+                return string.Empty;
+            }
+
+            var cleaned = Regex.Replace(scope.Trim().ToLowerInvariant(), "[^a-z0-9-_]", "-");
+            cleaned = Regex.Replace(cleaned, "-+", "-").Trim('-');
+
+            return string.IsNullOrWhiteSpace(cleaned) ? string.Empty : $"({cleaned})";
+        }
+
+        private static string BuildCommitSubject(string title)
+        {
+            var compact = Regex.Replace(title, "\\s+", " ").Trim();
+            if (string.IsNullOrWhiteSpace(compact))
+            {
+                return "update task";
+            }
+
+            compact = compact.TrimEnd('.', ';', ':');
+            return compact.Length <= 72 ? compact : compact[..72].TrimEnd();
         }
 
         public async Task<TaskStatisticsByStatusDTO> GetTaskStatisticsByStatusAsync(int userId)
