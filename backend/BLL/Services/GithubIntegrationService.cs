@@ -37,20 +37,23 @@ namespace BLL.Services
 
             try
             {
-                var commits = await _githubApiService.GetCommitsAsync(projectId);
+                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+                var since = integration?.LastSync;
+                var commits = await _githubApiService.GetCommitsAsync(projectId, since);
 
-                if (commits == null || !commits.Any())
+                if (!commits.Any())
                 {
                     await UpdateLastSyncAsync(projectId, SyncStatus.success);
                     return;
                 }
+
+                var newGithubCommits = new List<(BLL.DTOs.Github.GithubCommitDto dto, GithubCommit entity)>();
 
                 foreach (var dto in commits)
                 {
                     if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
                         continue;
 
-                    // 1. Save to GithubCommit (raw data)
                     var githubCommit = new GithubCommit
                     {
                         ProjectId = projectId,
@@ -67,13 +70,26 @@ namespace BLL.Services
                         LastSynced = DateTime.UtcNow
                     };
 
-                    await _githubCommitRepository.AddAsync(githubCommit);
+                    newGithubCommits.Add((dto, githubCommit));
+                }
+
+                if (newGithubCommits.Any())
+                {
+                    await _githubCommitRepository.AddRangeAsync(newGithubCommits.Select(x => x.entity));
+                }
+
+                var newBaseCommits = new List<Commit>();
+
+                foreach (var item in newGithubCommits)
+                {
+                    var dto = item.dto;
+                    var githubCommit = item.entity;
 
                     // 2. Try to map to internal User and create base Commit
                     var user = await MapGithubAuthorToUserAsync(dto.AuthorLogin, dto.AuthorEmail, dto.AuthorName);
                     if (user != null)
                     {
-                        var baseCommit = new Commit
+                        newBaseCommits.Add(new Commit
                         {
                             ProjectId = projectId,
                             UserId = user.UserId,
@@ -83,10 +99,13 @@ namespace BLL.Services
                             Additions = dto.Additions,
                             Deletions = dto.Deletions,
                             ChangedFiles = dto.ChangedFiles
-                        };
-
-                        await _commitRepository.AddAsync(baseCommit);
+                        });
                     }
+                }
+
+                if (newBaseCommits.Any())
+                {
+                    await _commitRepository.AddRangeAsync(newBaseCommits);
                 }
 
                 // Mark sync as successful
