@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using BLL.DTOs.Github;
 
 namespace BLL.Services
 {
@@ -30,8 +31,10 @@ namespace BLL.Services
             _githubIntegrationRepository = githubIntegrationRepository;
         }
 
-        public async System.Threading.Tasks.Task SyncCommitsAsync(int projectId)
+        public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId)
         {
+            var startedAt = DateTime.UtcNow;
+
             // Mark as syncing
             await SetSyncStatusAsync(projectId, SyncStatus.syncing);
 
@@ -40,19 +43,45 @@ namespace BLL.Services
                 var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
                 var since = integration?.LastSync;
                 var commits = await _githubApiService.GetCommitsAsync(projectId, since);
+                var fetchedCount = commits.Count;
 
-                if (!commits.Any())
-                {
-                    await UpdateLastSyncAsync(projectId, SyncStatus.success);
-                    return;
-                }
+                // Existing raw commits in DB (used for SHA dedupe and local-commit recovery).
+                var existingGithubCommits = await _githubCommitRepository.GetCommitsByProjectIdAsync(projectId);
+                var existingShas = existingGithubCommits
+                    .Select(c => c.CommitSha)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
                 var newGithubCommits = new List<(BLL.DTOs.Github.GithubCommitDto dto, GithubCommit entity)>();
+                var duplicateSkipped = 0;
 
-                foreach (var dto in commits)
+                //Fetch existing commit SHAs for this project to avoid N+1 queries
+                var existingGithubCommits = await _githubCommitRepository.GetCommitsByProjectIdAsync(projectId);
+                var existingShas = existingGithubCommits.Select(c => c.CommitSha).ToHashSet();
+
+                //Fetch all users for author mapping in memory
+                var allUsers = await _userRepository.GetAllAsync();
+                var usersByGithubUsername = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.GithubUsername))
+                    .ToDictionary(u => u.GithubUsername, u => u, StringComparer.OrdinalIgnoreCase);
+                var usersByEmail = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.Email))
+                    .ToDictionary(u => u.Email, u => u, StringComparer.OrdinalIgnoreCase);
+
+                var newGithubCommits = new System.Collections.Generic.List<GithubCommit>();
+                
+                // Group by SHA to get distinct commits (in case the API returns duplicates)
+                var uniqueCommits = commits.GroupBy(c => c.Sha).Select(g => g.First()).ToList();
+                var dtosBySha = uniqueCommits.ToDictionary(c => c.Sha, c => c);
+
+                foreach (var dto in uniqueCommits)
                 {
                     if (existingShas.Contains(dto.Sha))
+                    {
+                        duplicateSkipped++;
                         continue;
+                    }
+
+                    existingShas.Add(dto.Sha);
 
                     var githubCommit = new GithubCommit
                     {
@@ -76,17 +105,28 @@ namespace BLL.Services
                 if (newGithubCommits.Any())
                 {
                     await _githubCommitRepository.AddRangeAsync(newGithubCommits.Select(x => x.entity));
+                    existingGithubCommits.AddRange(newGithubCommits.Select(x => x.entity));
                 }
 
                 var newBaseCommits = new List<Commit>();
 
-                foreach (var item in newGithubCommits)
-                {
-                    var dto = item.dto;
-                    var githubCommit = item.entity;
+                // Rebuild missing local commits from any raw github_commit rows that are not linked yet.
+                var existingLocalCommitGithubIds = (await _commitRepository.GetCommitsByProjectIdAsync(projectId))
+                    .Select(c => c.GithubCommitId)
+                    .ToHashSet();
 
-                    // 2. Try to map to internal User and create base Commit
-                    var user = await MapGithubAuthorToUserAsync(dto.AuthorLogin, dto.AuthorEmail, dto.AuthorName);
+                var pendingRawForLocal = existingGithubCommits
+                    .Where(gc => !existingLocalCommitGithubIds.Contains(gc.GithubCommitId))
+                    .ToList();
+                var unmatchedLocalCommits = 0;
+
+                foreach (var githubCommit in pendingRawForLocal)
+                {
+                    var user = await MapGithubAuthorToUserAsync(
+                        githubCommit.AuthorUsername,
+                        githubCommit.AuthorEmail,
+                        githubCommit.AuthorUsername);
+
                     if (user != null)
                     {
                         newBaseCommits.Add(new Commit
@@ -94,12 +134,16 @@ namespace BLL.Services
                             ProjectId = projectId,
                             UserId = user.UserId,
                             GithubCommitId = githubCommit.GithubCommitId,
-                            CommitMessage = dto.Message,
-                            CommitDate = dto.Date,
-                            Additions = dto.Additions,
-                            Deletions = dto.Deletions,
-                            ChangedFiles = dto.ChangedFiles
+                            CommitMessage = githubCommit.CommitMessage,
+                            CommitDate = githubCommit.CommitDate,
+                            Additions = githubCommit.Additions,
+                            Deletions = githubCommit.Deletions,
+                            ChangedFiles = githubCommit.ChangedFiles
                         });
+                    }
+                    else
+                    {
+                        unmatchedLocalCommits++;
                     }
                 }
 
@@ -110,6 +154,19 @@ namespace BLL.Services
 
                 // Mark sync as successful
                 await UpdateLastSyncAsync(projectId, SyncStatus.success);
+
+                return new GithubSyncSummaryDto
+                {
+                    ProjectId = projectId,
+                    IncrementalSync = since.HasValue,
+                    Since = since,
+                    GithubFetched = fetchedCount,
+                    DuplicateShaSkipped = duplicateSkipped,
+                    NewRawGithubCommits = newGithubCommits.Count,
+                    LocalCommitsRecovered = newBaseCommits.Count,
+                    UnmatchedLocalCommits = unmatchedLocalCommits,
+                    ElapsedMilliseconds = (long)(DateTime.UtcNow - startedAt).TotalMilliseconds
+                };
             }
             catch
             {
