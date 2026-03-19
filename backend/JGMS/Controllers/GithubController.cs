@@ -71,8 +71,8 @@ namespace JGMS.Controllers
         {
             try
             {
-                await _githubIntegrationService.SyncCommitsAsync(projectId);
-                return Ok(new { Message = "Commits synced successfully." });
+                var summary = await _githubIntegrationService.SyncCommitsAsync(projectId);
+                return Ok(summary);
             }
             catch (Exception ex)
             {
