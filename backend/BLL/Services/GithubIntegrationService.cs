@@ -51,7 +51,7 @@ namespace BLL.Services
 
                 foreach (var dto in commits)
                 {
-                    if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
+                    if (existingShas.Contains(dto.Sha))
                         continue;
 
                     var githubCommit = new GithubCommit
