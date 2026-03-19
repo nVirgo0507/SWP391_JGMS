@@ -6,6 +6,8 @@ namespace BLL.DTOs.Github
     {
         public string Sha { get; set; } = null!;
         public string Message { get; set; } = null!;
+        // GitHub account login (best identifier for mapping to local github_username).
+        public string? AuthorLogin { get; set; }
         public string AuthorName { get; set; } = null!;
         public string AuthorEmail { get; set; } = null!;
         public DateTime Date { get; set; }

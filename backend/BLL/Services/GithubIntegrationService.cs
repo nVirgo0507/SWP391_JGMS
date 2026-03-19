@@ -3,7 +3,7 @@ using DAL.Models;
 using DAL.Repositories.Interface;
 using System;
 using System.Linq;
-using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -56,8 +56,10 @@ namespace BLL.Services
                         ProjectId = projectId,
                         CommitSha = dto.Sha,
                         CommitMessage = dto.Message,
-                        AuthorUsername = dto.AuthorName,
-                        AuthorEmail = dto.AuthorEmail,
+                        AuthorUsername = NormalizeUsername(dto.AuthorLogin)
+                                         ?? NormalizeUsername(dto.AuthorName)
+                                         ?? "unknown",
+                        AuthorEmail = NormalizeEmail(dto.AuthorEmail),
                         CommitDate = dto.Date,
                         Additions = dto.Additions,
                         Deletions = dto.Deletions,
@@ -68,7 +70,7 @@ namespace BLL.Services
                     await _githubCommitRepository.AddAsync(githubCommit);
 
                     // 2. Try to map to internal User and create base Commit
-                    var user = await MapGithubAuthorToUserAsync(dto.AuthorName, dto.AuthorEmail);
+                    var user = await MapGithubAuthorToUserAsync(dto.AuthorLogin, dto.AuthorEmail, dto.AuthorName);
                     if (user != null)
                     {
                         var baseCommit = new Commit
@@ -133,23 +135,80 @@ namespace BLL.Services
             }
         }
 
-        private async Task<User?> MapGithubAuthorToUserAsync(string githubUsername, string email)
+        private async Task<User?> MapGithubAuthorToUserAsync(string? githubLogin, string? email, string? authorName)
         {
-            // First try by exact GithubUsername
-            if (!string.IsNullOrEmpty(githubUsername))
+            // 1) Primary: GitHub login -> local github_username
+            var normalizedLogin = NormalizeUsername(githubLogin);
+            if (!string.IsNullOrEmpty(normalizedLogin))
             {
-                var userByGithub = await _userRepository.GetByGithubUsernameAsync(githubUsername);
+                var userByGithub = await _userRepository.GetByGithubUsernameAsync(normalizedLogin);
                 if (userByGithub != null) return userByGithub;
             }
 
-            // Then try by Email
-            if (!string.IsNullOrEmpty(email))
+            // 2) Fallback: normalized commit email -> local email
+            var normalizedEmail = NormalizeEmail(email);
+            if (!string.IsNullOrEmpty(normalizedEmail))
             {
-                var userByEmail = await _userRepository.GetByEmailAsync(email);
+                var userByEmail = await _userRepository.GetByEmailAsync(normalizedEmail);
                 if (userByEmail != null) return userByEmail;
+
+                // 3) Optional fallback for GitHub noreply addresses.
+                var noreplyLogin = ExtractLoginFromNoReplyEmail(normalizedEmail);
+                if (!string.IsNullOrEmpty(noreplyLogin))
+                {
+                    var userByNoReplyLogin = await _userRepository.GetByGithubUsernameAsync(noreplyLogin);
+                    if (userByNoReplyLogin != null) return userByNoReplyLogin;
+                }
+            }
+
+            // 4) Last resort: use author display string only if it looks like a login.
+            var authorNameAsLogin = NormalizeUsername(authorName);
+            if (!string.IsNullOrEmpty(authorNameAsLogin) && LooksLikeGithubLogin(authorNameAsLogin))
+            {
+                var userByHeuristicLogin = await _userRepository.GetByGithubUsernameAsync(authorNameAsLogin);
+                if (userByHeuristicLogin != null) return userByHeuristicLogin;
             }
 
             return null;
+        }
+
+        private static string? NormalizeEmail(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+            return value.Trim().ToLowerInvariant();
+        }
+
+        private static string? NormalizeUsername(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+            return value.Trim().ToLowerInvariant();
+        }
+
+        private static bool LooksLikeGithubLogin(string value)
+        {
+            // GitHub login allows alnum/hyphen, no spaces. Keep this strict to avoid false matches on real names.
+            return Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9-]{0,37})$");
+        }
+
+        private static string? ExtractLoginFromNoReplyEmail(string email)
+        {
+            // Handles both:
+            // 12345+login@users.noreply.github.com
+            // login@users.noreply.github.com
+            const string suffix = "@users.noreply.github.com";
+            if (!email.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var localPart = email[..^suffix.Length];
+            if (string.IsNullOrWhiteSpace(localPart))
+                return null;
+
+            var plusIndex = localPart.IndexOf('+');
+            var login = plusIndex >= 0 ? localPart[(plusIndex + 1)..] : localPart;
+            login = login.Trim().ToLowerInvariant();
+            return LooksLikeGithubLogin(login) ? login : null;
         }
     }
 }

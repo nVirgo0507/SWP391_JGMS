@@ -107,6 +107,7 @@ namespace BLL.Services
 				{
 					Sha = c.Sha,
 					Message = c.Commit.Message,
+          AuthorLogin = c.Author?.Login,
 					AuthorName = c.Commit.Author?.Name ?? c.Commit.Committer?.Name ?? c.Author?.Login ?? "Unknown",
 					AuthorEmail = c.Commit.Author?.Email ?? c.Commit.Committer?.Email ?? "",
 					Date = c.Commit.Author?.Date.UtcDateTime ?? c.Commit.Committer?.Date.UtcDateTime ?? DateTime.UtcNow,
