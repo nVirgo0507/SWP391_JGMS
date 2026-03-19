@@ -11,15 +11,27 @@ namespace BLL.Services
         private readonly IStudentGroupRepository _groupRepository;
         private readonly IUserRepository _userRepository;
         private readonly IGroupMemberRepository _memberRepository;
+        private readonly IRequirementRepository _requirementRepository;
+        private readonly ITaskRepository _taskRepository;
+        private readonly IProjectRepository _projectRepository;
+        private readonly ICommitRepository _commitRepository;
 
         public LecturerService(
             IStudentGroupRepository groupRepository,
             IUserRepository userRepository,
-            IGroupMemberRepository memberRepository)
+            IGroupMemberRepository memberRepository,
+            IRequirementRepository requirementRepository,
+            ITaskRepository taskRepository,
+            IProjectRepository projectRepository,
+            ICommitRepository commitRepository)
         {
             _groupRepository = groupRepository;
             _userRepository = userRepository;
             _memberRepository = memberRepository;
+            _requirementRepository = requirementRepository;
+            _taskRepository = taskRepository;
+            _projectRepository = projectRepository;
+            _commitRepository = commitRepository;
         }
 
         public async Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId)
@@ -189,6 +201,181 @@ namespace BLL.Services
             return MapToGroupResponse(updatedGroup!);
         }
 
+        public async Task<List<RequirementResponseDTO>> GetGroupRequirementsAsync(int lecturerId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId)
+                ?? throw new Exception("Student group not found");
+
+            if (group.LecturerId != lecturerId)
+                throw new Exception("Access denied. You are not assigned to this group.");
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+                return new List<RequirementResponseDTO>();
+
+            var requirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            return requirements.Select(MapToRequirementResponse).ToList();
+        }
+
+        public async Task<List<TaskResponseDTO>> GetGroupTasksAsync(int lecturerId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId)
+                ?? throw new Exception("Student group not found");
+
+            if (group.LecturerId != lecturerId)
+                throw new Exception("Access denied. You are not assigned to this group.");
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+                return new List<TaskResponseDTO>();
+
+            var tasks = await _taskRepository.GetTasksByProjectIdAsync(project.ProjectId);
+            return tasks.Select(MapToTaskResponse).ToList();
+        }
+
+        public async Task<List<ProgressReportResponseDTO>> GetProjectProgressReportsAsync(int lecturerId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId)
+                ?? throw new Exception("Student group not found");
+
+            if (group.LecturerId != lecturerId)
+                throw new Exception("Access denied. You are not assigned to this group.");
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+                return new List<ProgressReportResponseDTO>();
+
+            var reports = await _projectRepository.GetProgressReportsByProjectIdAsync(project.ProjectId);
+            return reports.Select(r => new ProgressReportResponseDTO
+            {
+                ReportId = r.ReportId,
+                ProjectId = r.ProjectId,
+                ReportPeriodStart = r.ReportPeriodStart,
+                ReportPeriodEnd = r.ReportPeriodEnd,
+                ReportData = r.ReportData,
+                Summary = r.Summary,
+                FilePath = r.FilePath,
+                GeneratedBy = r.GeneratedBy,
+                GeneratedByName = r.GeneratedByNavigation?.FullName,
+                GeneratedAt = r.GeneratedAt,
+                CreatedAt = r.CreatedAt
+            }).ToList();
+        }
+
+        public async Task<GroupCommitStatisticsResponseDTO> GetGithubCommitStatisticsAsync(int lecturerId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId)
+                ?? throw new Exception("Student group not found");
+
+            if (group.LecturerId != lecturerId)
+                throw new Exception("Access denied. You are not assigned to this group.");
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+            {
+                return new GroupCommitStatisticsResponseDTO
+                {
+                    GroupId = groupId,
+                    GroupCode = group.GroupCode
+                };
+            }
+
+            var statsRows = await _projectRepository.GetCommitStatisticsByProjectIdAsync(project.ProjectId);
+            if (statsRows.Any())
+            {
+                var latestByUser = statsRows
+                    .GroupBy(s => s.UserId)
+                    .Select(g => g
+                        .OrderByDescending(x => x.PeriodEnd)
+                        .ThenByDescending(x => x.UpdatedAt)
+                        .First())
+                    .ToList();
+
+                return new GroupCommitStatisticsResponseDTO
+                {
+                    GroupId = groupId,
+                    GroupCode = group.GroupCode,
+                    ProjectId = project.ProjectId,
+                    PeriodStart = latestByUser.Min(s => s.PeriodStart),
+                    PeriodEnd = latestByUser.Max(s => s.PeriodEnd),
+                    TotalCommits = latestByUser.Sum(s => s.TotalCommits ?? 0),
+                    TotalAdditions = latestByUser.Sum(s => s.TotalAdditions ?? 0),
+                    TotalDeletions = latestByUser.Sum(s => s.TotalDeletions ?? 0),
+                    TotalChangedFiles = latestByUser.Sum(s => s.TotalChangedFiles ?? 0),
+                    Members = latestByUser
+                        .OrderByDescending(s => s.TotalCommits ?? 0)
+                        .Select(s => new MemberCommitStatisticsDTO
+                        {
+                            UserId = s.UserId,
+                            UserName = s.User?.FullName ?? $"User {s.UserId}",
+                            TotalCommits = s.TotalCommits ?? 0,
+                            TotalAdditions = s.TotalAdditions ?? 0,
+                            TotalDeletions = s.TotalDeletions ?? 0,
+                            TotalChangedFiles = s.TotalChangedFiles ?? 0,
+                            CommitFrequency = s.CommitFrequency,
+                            AvgCommitSize = s.AvgCommitSize,
+                            LastCommitDate = null
+                        })
+                        .ToList()
+                };
+            }
+
+            var commits = await _commitRepository.GetCommitsByProjectIdAsync(project.ProjectId);
+            if (!commits.Any())
+            {
+                return new GroupCommitStatisticsResponseDTO
+                {
+                    GroupId = groupId,
+                    GroupCode = group.GroupCode,
+                    ProjectId = project.ProjectId
+                };
+            }
+
+            var byUser = commits.GroupBy(c => c.UserId).ToList();
+            var periodStart = DateOnly.FromDateTime(commits.Min(c => c.CommitDate).Date);
+            var periodEnd = DateOnly.FromDateTime(commits.Max(c => c.CommitDate).Date);
+
+            var memberStats = byUser
+                .Select(g =>
+                {
+                    var userCommits = g.ToList();
+                    var firstDate = userCommits.Min(c => c.CommitDate).Date;
+                    var lastDate = userCommits.Max(c => c.CommitDate).Date;
+                    var days = Math.Max(1, (lastDate - firstDate).TotalDays + 1);
+
+                    return new MemberCommitStatisticsDTO
+                    {
+                        UserId = g.Key,
+                        UserName = userCommits.First().User?.FullName ?? $"User {g.Key}",
+                        TotalCommits = userCommits.Count,
+                        TotalAdditions = userCommits.Sum(c => c.Additions ?? 0),
+                        TotalDeletions = userCommits.Sum(c => c.Deletions ?? 0),
+                        TotalChangedFiles = userCommits.Sum(c => c.ChangedFiles ?? 0),
+                        CommitFrequency = Math.Round((decimal)userCommits.Count / (decimal)days, 2),
+                        AvgCommitSize = userCommits.Any()
+                            ? (int)Math.Round(userCommits.Average(c => (c.Additions ?? 0) + (c.Deletions ?? 0)))
+                            : 0,
+                        LastCommitDate = userCommits.Max(c => c.CommitDate)
+                    };
+                })
+                .OrderByDescending(m => m.TotalCommits)
+                .ToList();
+
+            return new GroupCommitStatisticsResponseDTO
+            {
+                GroupId = groupId,
+                GroupCode = group.GroupCode,
+                ProjectId = project.ProjectId,
+                PeriodStart = periodStart,
+                PeriodEnd = periodEnd,
+                TotalCommits = commits.Count,
+                TotalAdditions = commits.Sum(c => c.Additions ?? 0),
+                TotalDeletions = commits.Sum(c => c.Deletions ?? 0),
+                TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0),
+                Members = memberStats
+            };
+        }
+
         private StudentGroupResponseDTO MapToGroupResponse(StudentGroup group)
         {
             var activeMembers = group.GroupMembers
@@ -222,6 +409,52 @@ namespace BLL.Services
                 Members      = activeMembers,
                 CreatedAt    = group.CreatedAt,
                 UpdatedAt    = group.UpdatedAt
+            };
+        }
+
+        private static RequirementResponseDTO MapToRequirementResponse(Requirement r)
+        {
+            return new RequirementResponseDTO
+            {
+                RequirementId = r.RequirementId,
+                ProjectId = r.ProjectId,
+                JiraIssueId = r.JiraIssueId,
+                JiraIssueKey = r.JiraIssue?.IssueKey,
+                RequirementCode = r.RequirementCode,
+                Title = r.Title,
+                Description = r.Description,
+                RequirementType = r.RequirementType.ToString(),
+                IssueType = r.JiraIssue?.IssueType,
+                Priority = r.Priority.ToString(),
+                JiraStatus = r.JiraIssue?.Status,
+                CreatedBy = r.CreatedBy,
+                CreatedByName = r.CreatedByNavigation?.FullName,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt
+            };
+        }
+
+        private static TaskResponseDTO MapToTaskResponse(DAL.Models.Task t)
+        {
+            return new TaskResponseDTO
+            {
+                TaskId = t.TaskId,
+                RequirementId = t.RequirementId,
+                RequirementCode = t.Requirement?.RequirementCode,
+                JiraIssueId = t.JiraIssueId,
+                JiraIssueKey = t.JiraIssue?.IssueKey,
+                AssignedTo = t.AssignedTo,
+                AssignedToName = t.AssignedToNavigation?.FullName,
+                Title = t.Title,
+                Description = t.Description,
+                Status = t.Status.ToString(),
+                Priority = t.Priority.ToString(),
+                DueDate = t.DueDate,
+                CompletedAt = t.CompletedAt,
+                SprintId = t.JiraIssue?.SprintId,
+                SprintName = t.JiraIssue?.SprintName,
+                CreatedAt = t.CreatedAt,
+                UpdatedAt = t.UpdatedAt
             };
         }
     }

@@ -85,6 +85,8 @@ psql "postgresql://admin:PASSWORD@HOST:5432/jgms" -f database/migrations/002_sof
 |---|------|-------------|---------|
 | 001 | `001_fix_api_token_length.sql` | api_token VARCHAR(255) → TEXT | 2026-02-28 |
 | 002 | `002_softdelete_group_members.sql` | Add `left_at` to `group_member` for soft-delete audit trail | 2026-03-02 |
+| 003 | `003_srs_overall_description.sql` | Add `overall_description` to `srs_document` | 2026-03-03 |
+| 004 | `004_add_jira_issue_sprint_fields.sql` | Add `sprint_id`, `sprint_name`, `sprint_state` to `jira_issue` | 2026-03-17 |
 
 ---
 

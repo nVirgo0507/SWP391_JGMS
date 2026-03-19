@@ -100,6 +100,38 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Generate an auto commit line suggestion from either task ID or Jira issue key.
+        /// Supports optional conventional-commit customization and returns Git/GitHub commands.
+        /// </summary>
+        [HttpPost("commit-line")]
+        [ProducesResponseType(typeof(StudentDTOs.CommitLineSuggestionResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GenerateCommitLine([FromBody] StudentDTOs.CommitLineSuggestionRequestDTO dto)
+        {
+            try
+            {
+                if (dto == null)
+                    return BadRequest(new { message = "Request body is required" });
+
+                var suggestion = await _studentService.GenerateCommitLineSuggestionAsync(GetCurrentUserId(), dto);
+                return Ok(suggestion);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message.Equals("Task not found", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Equals("Jira issue not found", StringComparison.OrdinalIgnoreCase))
+                    return NotFound(new { message = ex.Message });
+
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Update the status of a task assigned to you.
         /// Accepted status values (case-insensitive, flexible formatting):
         /// - "todo", "To Do", "to do", "to_do"

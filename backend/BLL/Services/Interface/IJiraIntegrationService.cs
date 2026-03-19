@@ -64,7 +64,7 @@ namespace BLL.Services.Interface
         /// - Admin: All issues
         /// - Lecturer: All issues in their assigned groups (read-only)
         /// - Leader: All issues in their project
-        /// - Student: Only assigned issues
+        /// - Student: All issues in their group's project
         /// </summary>
         Task<List<JiraIssueDTO>> GetProjectIssuesAsync(int userId, int projectId);
 

@@ -12,6 +12,7 @@ namespace BLL.Services.Interface
 
         // Update Task Status
         System.Threading.Tasks.Task UpdateTaskStatusAsync(int taskId, int userId, UpdateTaskStatusDTO dto);
+        System.Threading.Tasks.Task<CommitLineSuggestionResponseDTO> GenerateCommitLineSuggestionAsync(int userId, CommitLineSuggestionRequestDTO dto);
 
         // View Personal Statistics
         System.Threading.Tasks.Task<PersonalStatisticsDTO> GetPersonalStatisticsAsync(int userId, int? projectId = null);

@@ -33,6 +33,17 @@ namespace DAL.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<Commit>> GetCommitsByProjectIdAsync(int projectId)
+        {
+            return await _context.Commits
+                .Include(c => c.User)
+                .Include(c => c.Project)
+                .Include(c => c.GithubCommit)
+                .Where(c => c.ProjectId == projectId)
+                .OrderByDescending(c => c.CommitDate)
+                .ToListAsync();
+        }
+
         public async Task<Commit?> GetByIdAsync(int commitId)
         {
             return await _context.Commits

@@ -24,7 +24,8 @@ namespace DAL.Repositories
 
 		public async Task<bool> EmailExistsAsync(string email)
 		{
-			return await _context.Users.AnyAsync(x => x.Email == email);
+			var normalized = email.Trim().ToLower();
+			return await _context.Users.AnyAsync(x => x.Email.ToLower() == normalized);
 		}
 
 		public async Task<bool> PhoneExistsAsync(string phone)
@@ -34,7 +35,8 @@ namespace DAL.Repositories
 
 		public async Task<bool> GithubUsernameExistsAsync(string githubUsername)
 		{
-			return await _context.Users.AnyAsync(x => x.GithubUsername == githubUsername);
+			var normalized = githubUsername.Trim().ToLower();
+			return await _context.Users.AnyAsync(x => x.GithubUsername != null && x.GithubUsername.ToLower() == normalized);
 		}
 
 		public async Task<bool> JiraAccountIdExistsAsync(string jiraAccountId)
@@ -44,12 +46,14 @@ namespace DAL.Repositories
 
 		public async Task<User?> GetByEmailAsync(string email)
 		{
-			return await _context.Users.FirstOrDefaultAsync(x => x.Email == email);
+			var normalized = email.Trim().ToLower();
+			return await _context.Users.FirstOrDefaultAsync(x => x.Email.ToLower() == normalized);
 		}
 
 		public async Task<User?> GetByGithubUsernameAsync(string username)
 		{
-			return await _context.Users.FirstOrDefaultAsync(x => x.GithubUsername == username);
+			var normalized = username.Trim().ToLower();
+			return await _context.Users.FirstOrDefaultAsync(x => x.GithubUsername != null && x.GithubUsername.ToLower() == normalized);
 		}
 
 		public async Task<User?> GetByIdAsync(int userId)
