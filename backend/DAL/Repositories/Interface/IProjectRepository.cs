@@ -6,6 +6,8 @@ namespace DAL.Repositories.Interface
     {
         System.Threading.Tasks.Task<Project?> GetByIdAsync(int projectId);
         System.Threading.Tasks.Task<Project?> GetByGroupIdAsync(int groupId);
+        System.Threading.Tasks.Task<List<ProgressReport>> GetProgressReportsByProjectIdAsync(int projectId);
+        System.Threading.Tasks.Task<List<CommitStatistic>> GetCommitStatisticsByProjectIdAsync(int projectId);
         System.Threading.Tasks.Task<List<Project>> GetAllAsync();
         System.Threading.Tasks.Task AddAsync(Project project);
         System.Threading.Tasks.Task UpdateAsync(Project project);
