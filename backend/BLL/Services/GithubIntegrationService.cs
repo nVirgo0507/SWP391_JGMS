@@ -54,7 +54,26 @@ namespace BLL.Services
                 var newGithubCommits = new List<(BLL.DTOs.Github.GithubCommitDto dto, GithubCommit entity)>();
                 var duplicateSkipped = 0;
 
-                foreach (var dto in commits)
+                //Fetch existing commit SHAs for this project to avoid N+1 queries
+                var existingGithubCommits = await _githubCommitRepository.GetCommitsByProjectIdAsync(projectId);
+                var existingShas = existingGithubCommits.Select(c => c.CommitSha).ToHashSet();
+
+                //Fetch all users for author mapping in memory
+                var allUsers = await _userRepository.GetAllAsync();
+                var usersByGithubUsername = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.GithubUsername))
+                    .ToDictionary(u => u.GithubUsername, u => u, StringComparer.OrdinalIgnoreCase);
+                var usersByEmail = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.Email))
+                    .ToDictionary(u => u.Email, u => u, StringComparer.OrdinalIgnoreCase);
+
+                var newGithubCommits = new System.Collections.Generic.List<GithubCommit>();
+                
+                // Group by SHA to get distinct commits (in case the API returns duplicates)
+                var uniqueCommits = commits.GroupBy(c => c.Sha).Select(g => g.First()).ToList();
+                var dtosBySha = uniqueCommits.ToDictionary(c => c.Sha, c => c);
+
+                foreach (var dto in uniqueCommits)
                 {
                     if (existingShas.Contains(dto.Sha))
                     {
