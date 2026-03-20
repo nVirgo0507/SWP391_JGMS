@@ -214,35 +214,28 @@ namespace BLL.Services
         {
             var statisticsDto = new PersonalStatisticsDTO();
 
-            // Get task statistics
+            // Get task statistics from live TASK rows to avoid stale/empty snapshot results.
+            var tasks = await _taskRepository.GetTasksByUserIdAsync(userId);
             if (projectId.HasValue)
             {
-                var taskStats = await _statisticRepository.GetByUserIdAndProjectIdAsync(userId, projectId.Value);
-                if (taskStats != null)
-                {
-                    statisticsDto.TotalTasks = taskStats.TotalTasks ?? 0;
-                    statisticsDto.CompletedTasks = taskStats.CompletedTasks ?? 0;
-                    statisticsDto.InProgressTasks = taskStats.InProgressTasks ?? 0;
-                    statisticsDto.OverdueTasks = taskStats.OverdueTasks ?? 0;
-                    statisticsDto.CompletionRate = taskStats.CompletionRate ?? 0;
-                    statisticsDto.LastCalculated = taskStats.LastCalculated;
-                }
+                tasks = tasks
+                    .Where(t => (t.Requirement?.ProjectId == projectId.Value) || (t.JiraIssue?.ProjectId == projectId.Value))
+                    .ToList();
             }
-            else
-            {
-                // Calculate aggregate statistics across all projects
-                var allStats = await _statisticRepository.GetByUserIdAsync(userId);
-                statisticsDto.TotalTasks = allStats.Sum(s => s.TotalTasks ?? 0);
-                statisticsDto.CompletedTasks = allStats.Sum(s => s.CompletedTasks ?? 0);
-                statisticsDto.InProgressTasks = allStats.Sum(s => s.InProgressTasks ?? 0);
-                statisticsDto.OverdueTasks = allStats.Sum(s => s.OverdueTasks ?? 0);
-                statisticsDto.CompletionRate = statisticsDto.TotalTasks > 0
-                    ? (decimal)statisticsDto.CompletedTasks / statisticsDto.TotalTasks * 100
-                    : 0;
-                statisticsDto.LastCalculated = allStats.Any()
-                    ? allStats.Max(s => s.LastCalculated)
-                    : null;
-            }
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+            statisticsDto.TotalTasks = tasks.Count;
+            statisticsDto.CompletedTasks = tasks.Count(t => t.Status == DAL.Models.TaskStatus.done || t.CompletedAt.HasValue);
+            statisticsDto.InProgressTasks = tasks.Count(t => t.Status == DAL.Models.TaskStatus.in_progress);
+            statisticsDto.OverdueTasks = tasks.Count(t =>
+                t.DueDate.HasValue
+                && t.DueDate.Value < today
+                && t.Status != DAL.Models.TaskStatus.done
+                && !t.CompletedAt.HasValue);
+            statisticsDto.CompletionRate = statisticsDto.TotalTasks > 0
+                ? (decimal)statisticsDto.CompletedTasks / statisticsDto.TotalTasks * 100
+                : 0;
+            statisticsDto.LastCalculated = DateTime.UtcNow;
 
             // Get commit statistics
             var commits = projectId.HasValue

@@ -19,15 +19,18 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
+        private readonly ICommitRepository _commitRepository;
 
         public TeamMemberService(
             IUserRepository userRepository,
             ITaskRepository taskRepository,
-            IPersonalTaskStatisticRepository statisticRepository)
+            IPersonalTaskStatisticRepository statisticRepository,
+            ICommitRepository commitRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _statisticRepository = statisticRepository;
+            _commitRepository = commitRepository;
         }
 
         /// <summary>
@@ -214,9 +217,62 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get personal task statistics from repository
-            // Filter by user_id
-            return null;
+            var tasks = await _taskRepository.GetTasksByUserIdAsync(userId);
+            if (!tasks.Any())
+            {
+                return new PersonalTaskStatisticResponseDTO
+                {
+                    StatisticId = 0,
+                    UserId = userId,
+                    UserName = user.FullName,
+                    ProjectId = 0,
+                    TasksAssigned = 0,
+                    TasksCompleted = 0,
+                    TasksPending = 0,
+                    CompletionPercentage = 0,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+
+            var projectIds = tasks
+                .Select(t => t.Requirement?.ProjectId ?? t.JiraIssue?.ProjectId)
+                .Where(pid => pid.HasValue)
+                .Select(pid => pid!.Value)
+                .ToList();
+
+            var selectedProjectId = projectIds
+                .GroupBy(pid => pid)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+
+            var scopedTasks = selectedProjectId > 0
+                ? tasks.Where(t => (t.Requirement?.ProjectId ?? t.JiraIssue?.ProjectId) == selectedProjectId).ToList()
+                : tasks;
+
+            var assigned = scopedTasks.Count;
+            var completed = scopedTasks.Count(t => t.Status == DAL.Models.TaskStatus.done || t.CompletedAt.HasValue);
+            var pending = Math.Max(0, assigned - completed);
+            var completionPercentage = assigned == 0
+                ? 0
+                : Math.Round((double)completed * 100d / assigned, 2);
+
+            var snapshot = selectedProjectId > 0
+                ? await _statisticRepository.GetByUserIdAndProjectIdAsync(userId, selectedProjectId)
+                : null;
+
+            return new PersonalTaskStatisticResponseDTO
+            {
+                StatisticId = snapshot?.StatId ?? 0,
+                UserId = userId,
+                UserName = user.FullName,
+                ProjectId = selectedProjectId,
+                TasksAssigned = assigned,
+                TasksCompleted = completed,
+                TasksPending = pending,
+                CompletionPercentage = completionPercentage,
+                UpdatedAt = snapshot?.UpdatedAt ?? DateTime.UtcNow
+            };
         }
 
         /// <summary>
@@ -232,9 +288,46 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get personal commit statistics from repository
-            // Filter by user_id
-            return null;
+            var commits = await _commitRepository.GetCommitsByUserIdAsync(userId);
+
+            var now = DateTime.UtcNow;
+            var weekStart = now.Date.AddDays(-6);
+            var monthStart = new DateTime(now.Year, now.Month, 1);
+
+            var totalCommits = commits.Count;
+            var commitsThisWeek = commits.Count(c => c.CommitDate >= weekStart);
+            var commitsThisMonth = commits.Count(c => c.CommitDate >= monthStart);
+
+            var lastCommitDate = commits.Any() ? commits.Max(c => c.CommitDate) : (DateTime?)null;
+            var firstCommitDate = commits.Any() ? commits.Min(c => c.CommitDate) : (DateTime?)null;
+
+            var activeDays = firstCommitDate.HasValue
+                ? Math.Max(1, (now.Date - firstCommitDate.Value.Date).TotalDays + 1)
+                : 0;
+
+            var avgPerDay = activeDays > 0
+                ? Math.Round(totalCommits / activeDays, 2)
+                : 0;
+
+            var selectedProjectId = commits
+                .GroupBy(c => c.ProjectId)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+
+            return new CommitStatisticResponseDTO
+            {
+                StatisticId = 0,
+                UserId = userId,
+                UserName = user.FullName,
+                ProjectId = selectedProjectId,
+                TotalCommits = totalCommits,
+                CommitsThisWeek = commitsThisWeek,
+                CommitsThisMonth = commitsThisMonth,
+                AverageCommitsPerDay = avgPerDay,
+                LastCommitDate = lastCommitDate,
+                UpdatedAt = DateTime.UtcNow
+            };
         }
 
         private TaskResponseDTO MapToTaskResponse(DAL.Models.Task task)
