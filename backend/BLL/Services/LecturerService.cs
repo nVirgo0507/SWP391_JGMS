@@ -250,6 +250,7 @@ namespace BLL.Services
             {
                 ReportId = r.ReportId,
                 ProjectId = r.ProjectId,
+                ReportType = r.ReportType.ToString(),
                 ReportPeriodStart = r.ReportPeriodStart,
                 ReportPeriodEnd = r.ReportPeriodEnd,
                 ReportData = r.ReportData,

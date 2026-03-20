@@ -40,6 +40,14 @@ namespace DAL.Repositories
                 .ToListAsync();
         }
 
+        public async System.Threading.Tasks.Task AddProgressReportAsync(ProgressReport progressReport)
+        {
+            progressReport.CreatedAt ??= DateTime.UtcNow;
+            progressReport.GeneratedAt = progressReport.GeneratedAt == default ? DateTime.UtcNow : progressReport.GeneratedAt;
+            await _context.ProgressReports.AddAsync(progressReport);
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<List<CommitStatistic>> GetCommitStatisticsByProjectIdAsync(int projectId)
         {
             return await _context.CommitStatistics

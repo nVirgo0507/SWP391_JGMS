@@ -6,6 +6,8 @@ using DAL.Repositories.Interface;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -105,6 +107,94 @@ namespace BLL.Services
                 CreatedAt = project.CreatedAt,
                 UpdatedAt = project.UpdatedAt
             };
+        }
+
+        public async Task<List<ProgressReportResponseDTO>> GetGroupProgressReportsAsync(int userId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) return new List<ProgressReportResponseDTO>();
+
+            var reports = await _projectRepository.GetProgressReportsByProjectIdAsync(project.ProjectId);
+            return reports.Select(MapProgressReportToDTO).ToList();
+        }
+
+        public async Task<ProgressReportResponseDTO> CreateProgressReportAsync(int userId, int groupId, CreateProgressReportDTO dto)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            if (dto.ReportPeriodStart.HasValue && dto.ReportPeriodEnd.HasValue && dto.ReportPeriodStart > dto.ReportPeriodEnd)
+                throw new Exception("Report period start must be earlier than or equal to report period end.");
+
+            if (dto.ReportData.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                throw new Exception("reportData is required and must be valid JSON.");
+
+            if (dto.ReportData.ValueKind is not JsonValueKind.Object)
+                throw new Exception("reportData must be a JSON object.");
+
+            var reportDataJson = await BuildReportDataWithTaskProgressAsync(project.ProjectId, dto.ReportData);
+
+            var entity = new ProgressReport
+            {
+                ProjectId = project.ProjectId,
+                ReportType = ParseReportType(dto.ReportType),
+                ReportPeriodStart = dto.ReportPeriodStart,
+                ReportPeriodEnd = dto.ReportPeriodEnd,
+                ReportData = reportDataJson,
+                Summary = dto.Summary,
+                FilePath = dto.FilePath,
+                GeneratedBy = userId,
+                GeneratedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _projectRepository.AddProgressReportAsync(entity);
+
+            var user = await _userRepository.GetByIdAsync(userId);
+            var result = MapProgressReportToDTO(entity);
+            result.GeneratedByName = user?.FullName;
+            return result;
+        }
+
+        private async Task<string> BuildReportDataWithTaskProgressAsync(int projectId, JsonElement reportData)
+        {
+            var root = JsonNode.Parse(reportData.GetRawText()) as JsonObject
+                ?? throw new Exception("reportData must be a valid JSON object.");
+
+            var tasks = await _taskRepository.GetTasksByProjectIdAsync(projectId);
+            var assignedTasks = tasks.Where(t => t.AssignedTo.HasValue).ToList();
+            var source = assignedTasks.Any() ? assignedTasks : tasks;
+
+            var todoCount = source.Count(t => t.Status == DAL.Models.TaskStatus.todo);
+            var inProgressCount = source.Count(t => t.Status == DAL.Models.TaskStatus.in_progress);
+            var doneCount = source.Count(t => t.Status == DAL.Models.TaskStatus.done);
+            var totalCount = source.Count;
+            var completionRate = totalCount == 0
+                ? 0
+                : (int)Math.Round((double)doneCount * 100 / totalCount, MidpointRounding.AwayFromZero);
+
+            root["autoTaskProgress"] = new JsonObject
+            {
+                ["basedOn"] = assignedTasks.Any() ? "assigned_tasks" : "all_project_tasks",
+                ["total"] = totalCount,
+                ["todo"] = todoCount,
+                ["inProgress"] = inProgressCount,
+                ["done"] = doneCount,
+                ["completionRate"] = completionRate,
+                ["generatedAtUtc"] = DateTime.UtcNow
+            };
+
+            return root.ToJsonString();
         }
 
         /// <summary>
@@ -2020,6 +2110,33 @@ th { background-color: #2c3e50; color: white; }
 
             // Default — functional (the majority of Stories/Tasks/Epics)
             return RequirementType.functional;
+        }
+
+        private static ReportType ParseReportType(string value)
+        {
+            if (Enum.TryParse<ReportType>(value?.Trim(), true, out var parsed))
+                return parsed;
+
+            throw new Exception("Invalid reportType. Allowed values: task_assignment, task_completion, weekly, sprint.");
+        }
+
+        private static ProgressReportResponseDTO MapProgressReportToDTO(ProgressReport report)
+        {
+            return new ProgressReportResponseDTO
+            {
+                ReportId = report.ReportId,
+                ProjectId = report.ProjectId,
+                ReportType = report.ReportType.ToString(),
+                ReportPeriodStart = report.ReportPeriodStart,
+                ReportPeriodEnd = report.ReportPeriodEnd,
+                ReportData = report.ReportData,
+                Summary = report.Summary,
+                FilePath = report.FilePath,
+                GeneratedBy = report.GeneratedBy,
+                GeneratedByName = report.GeneratedByNavigation?.FullName,
+                GeneratedAt = report.GeneratedAt,
+                CreatedAt = report.CreatedAt
+            };
         }
     }
 }

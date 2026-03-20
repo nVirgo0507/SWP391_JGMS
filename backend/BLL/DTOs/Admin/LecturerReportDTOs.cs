@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 
 namespace BLL.DTOs.Admin
 {
@@ -12,6 +13,9 @@ namespace BLL.DTOs.Admin
 
         [Required]
         public int ProjectId { get; set; }
+
+        [Required]
+        public string ReportType { get; set; } = string.Empty;
 
         public DateOnly? ReportPeriodStart { get; set; }
 
@@ -31,6 +35,29 @@ namespace BLL.DTOs.Admin
         public DateTime GeneratedAt { get; set; }
 
         public DateTime? CreatedAt { get; set; }
+    }
+
+    /// <summary>
+    /// Input payload for team leader progress report generation.
+    /// reportData accepts a JSON object. Backend will auto-inject task progress metrics.
+    /// </summary>
+    public class CreateProgressReportDTO
+    {
+        [Required]
+        public string ReportType { get; set; } = string.Empty;
+
+        public DateOnly? ReportPeriodStart { get; set; }
+
+        public DateOnly? ReportPeriodEnd { get; set; }
+
+        [Required]
+        public JsonElement ReportData { get; set; }
+
+        [MaxLength(2000)]
+        public string? Summary { get; set; }
+
+        [MaxLength(255)]
+        public string? FilePath { get; set; }
     }
 
     /// <summary>
