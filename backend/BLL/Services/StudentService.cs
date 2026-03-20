@@ -13,6 +13,7 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ISrsDocumentRepository _srsRepository;
         private readonly IGroupMemberRepository _groupMemberRepository;
@@ -22,6 +23,7 @@ namespace BLL.Services
             IUserRepository userRepository,
             ITaskRepository taskRepository,
             ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository,
             IPersonalTaskStatisticRepository statisticRepository,
             ISrsDocumentRepository srsRepository,
             IGroupMemberRepository groupMemberRepository,
@@ -30,6 +32,7 @@ namespace BLL.Services
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
             _statisticRepository = statisticRepository;
             _srsRepository = srsRepository;
             _groupMemberRepository = groupMemberRepository;
@@ -237,15 +240,47 @@ namespace BLL.Services
                 : 0;
             statisticsDto.LastCalculated = DateTime.UtcNow;
 
-            // Get commit statistics
+            // Get commit statistics (commit_statistics is the primary source).
             var commits = projectId.HasValue
                 ? await _commitRepository.GetCommitsByUserIdAndProjectIdAsync(userId, projectId.Value)
                 : await _commitRepository.GetCommitsByUserIdAsync(userId);
 
-            statisticsDto.TotalCommits = commits.Count;
-            statisticsDto.TotalAdditions = commits.Sum(c => c.Additions ?? 0);
-            statisticsDto.TotalDeletions = commits.Sum(c => c.Deletions ?? 0);
-            statisticsDto.TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0);
+            var recalcProjectIds = projectId.HasValue
+                ? new List<int> { projectId.Value }
+                : commits.Select(c => c.ProjectId).Distinct().ToList();
+
+            foreach (var pid in recalcProjectIds)
+            {
+                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
+            }
+
+            if (projectId.HasValue)
+            {
+                var stat = await _commitStatisticRepository.GetLatestByUserAndProjectIdAsync(userId, projectId.Value);
+                statisticsDto.TotalCommits = stat?.TotalCommits ?? commits.Count;
+                statisticsDto.TotalAdditions = stat?.TotalAdditions ?? commits.Sum(c => c.Additions ?? 0);
+                statisticsDto.TotalDeletions = stat?.TotalDeletions ?? commits.Sum(c => c.Deletions ?? 0);
+                statisticsDto.TotalChangedFiles = stat?.TotalChangedFiles ?? commits.Sum(c => c.ChangedFiles ?? 0);
+            }
+            else
+            {
+                var stats = await _commitStatisticRepository.GetLatestByUserIdAsync(userId);
+                if (stats.Any())
+                {
+                    statisticsDto.TotalCommits = stats.Sum(s => s.TotalCommits ?? 0);
+                    statisticsDto.TotalAdditions = stats.Sum(s => s.TotalAdditions ?? 0);
+                    statisticsDto.TotalDeletions = stats.Sum(s => s.TotalDeletions ?? 0);
+                    statisticsDto.TotalChangedFiles = stats.Sum(s => s.TotalChangedFiles ?? 0);
+                }
+                else
+                {
+                    statisticsDto.TotalCommits = commits.Count;
+                    statisticsDto.TotalAdditions = commits.Sum(c => c.Additions ?? 0);
+                    statisticsDto.TotalDeletions = commits.Sum(c => c.Deletions ?? 0);
+                    statisticsDto.TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0);
+                }
+            }
+
             statisticsDto.LastCommitDate = commits.Any() ? commits.Max(c => c.CommitDate) : null;
 
             return statisticsDto;

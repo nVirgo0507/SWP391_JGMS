@@ -20,17 +20,20 @@ namespace BLL.Services
         private readonly ITaskRepository _taskRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
 
         public TeamMemberService(
             IUserRepository userRepository,
             ITaskRepository taskRepository,
             IPersonalTaskStatisticRepository statisticRepository,
-            ICommitRepository commitRepository)
+            ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _statisticRepository = statisticRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
         }
 
         /// <summary>
@@ -289,12 +292,25 @@ namespace BLL.Services
             }
 
             var commits = await _commitRepository.GetCommitsByUserIdAsync(userId);
+            var projectIds = commits.Select(c => c.ProjectId).Distinct().ToList();
+            foreach (var pid in projectIds)
+            {
+                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
+            }
+
+            var statsRows = await _commitStatisticRepository.GetLatestByUserIdAsync(userId);
+            var primaryStat = statsRows
+                .OrderByDescending(s => s.TotalCommits ?? 0)
+                .ThenByDescending(s => s.UpdatedAt)
+                .FirstOrDefault();
 
             var now = DateTime.UtcNow;
             var weekStart = now.Date.AddDays(-6);
             var monthStart = new DateTime(now.Year, now.Month, 1);
 
-            var totalCommits = commits.Count;
+            var totalCommits = statsRows.Any()
+                ? statsRows.Sum(s => s.TotalCommits ?? 0)
+                : commits.Count;
             var commitsThisWeek = commits.Count(c => c.CommitDate >= weekStart);
             var commitsThisMonth = commits.Count(c => c.CommitDate >= monthStart);
 
@@ -309,15 +325,12 @@ namespace BLL.Services
                 ? Math.Round(totalCommits / activeDays, 2)
                 : 0;
 
-            var selectedProjectId = commits
-                .GroupBy(c => c.ProjectId)
-                .OrderByDescending(g => g.Count())
-                .Select(g => g.Key)
-                .FirstOrDefault();
+            var selectedProjectId = primaryStat?.ProjectId
+                ?? commits.GroupBy(c => c.ProjectId).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
 
             return new CommitStatisticResponseDTO
             {
-                StatisticId = 0,
+                StatisticId = primaryStat?.StatId ?? 0,
                 UserId = userId,
                 UserName = user.FullName,
                 ProjectId = selectedProjectId,

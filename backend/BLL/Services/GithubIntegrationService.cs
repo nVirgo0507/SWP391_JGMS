@@ -14,6 +14,7 @@ namespace BLL.Services
         private readonly IGithubApiService _githubApiService;
         private readonly IGithubCommitRepository _githubCommitRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
         private readonly IUserRepository _userRepository;
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
 
@@ -21,12 +22,14 @@ namespace BLL.Services
             IGithubApiService githubApiService,
             IGithubCommitRepository githubCommitRepository,
             ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository,
             IUserRepository userRepository,
             IGithubIntegrationRepository githubIntegrationRepository)
         {
             _githubApiService = githubApiService;
             _githubCommitRepository = githubCommitRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
         }
@@ -138,6 +141,8 @@ namespace BLL.Services
                 {
                     await _commitRepository.AddRangeAsync(newBaseCommits);
                 }
+
+                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(projectId);
 
                 // Mark sync as successful
                 await UpdateLastSyncAsync(projectId, SyncStatus.success);

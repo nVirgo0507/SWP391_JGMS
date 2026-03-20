@@ -15,6 +15,7 @@ namespace BLL.Services
         private readonly ITaskRepository _taskRepository;
         private readonly IProjectRepository _projectRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
 
         public LecturerService(
             IStudentGroupRepository groupRepository,
@@ -23,7 +24,8 @@ namespace BLL.Services
             IRequirementRepository requirementRepository,
             ITaskRepository taskRepository,
             IProjectRepository projectRepository,
-            ICommitRepository commitRepository)
+            ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository)
         {
             _groupRepository = groupRepository;
             _userRepository = userRepository;
@@ -32,6 +34,7 @@ namespace BLL.Services
             _taskRepository = taskRepository;
             _projectRepository = projectRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
         }
 
         public async Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId)
@@ -281,16 +284,11 @@ namespace BLL.Services
                 };
             }
 
-            var statsRows = await _projectRepository.GetCommitStatisticsByProjectIdAsync(project.ProjectId);
+            await _commitStatisticRepository.RecalculateProjectStatisticsAsync(project.ProjectId);
+            var statsRows = await _commitStatisticRepository.GetLatestByProjectIdAsync(project.ProjectId);
             if (statsRows.Any())
             {
-                var latestByUser = statsRows
-                    .GroupBy(s => s.UserId)
-                    .Select(g => g
-                        .OrderByDescending(x => x.PeriodEnd)
-                        .ThenByDescending(x => x.UpdatedAt)
-                        .First())
-                    .ToList();
+                var latestByUser = statsRows;
 
                 return new GroupCommitStatisticsResponseDTO
                 {
