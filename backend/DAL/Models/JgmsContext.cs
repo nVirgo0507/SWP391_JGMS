@@ -802,6 +802,9 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
                 .HasColumnName("title");
+            entity.Property(e => e.WorkHours)
+                .HasDefaultValue(0)
+                .HasColumnName("work_hours");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")

@@ -25,6 +25,9 @@ namespace BLL.DTOs.Admin
         public string? Description { get; set; }
 
         public DateOnly? DueDate { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "Work hours must be a non-negative value")]
+        public int? WorkHours { get; set; }
     }
 
     /// <summary>
