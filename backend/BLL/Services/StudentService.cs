@@ -101,6 +101,11 @@ namespace BLL.Services
                 task.CompletedAt = DateTime.UtcNow;
             }
 
+            if (dto.WorkHours.HasValue)
+            {
+                task.WorkHours = (task.WorkHours ?? 0) + dto.WorkHours.Value;
+            }
+
             // TODO: Integrate with Jira API when implemented
             // - Update Jira issue status via API if task.JiraIssueId is present
             // - Post dto.Comment as Jira comment if provided
@@ -108,6 +113,12 @@ namespace BLL.Services
             // Example: await _jiraService.UpdateIssueAsync(task.JiraIssueId, dto.Status, dto.Comment, dto.WorkHours);
 
             await _taskRepository.UpdateAsync(task);
+
+            var projectId = ResolveProjectIdFromTask(task);
+            if (projectId.HasValue)
+            {
+                await _statisticRepository.RecalculateForUserProjectAsync(userId, projectId.Value);
+            }
         }
 
         public async System.Threading.Tasks.Task<CommitLineSuggestionResponseDTO> GenerateCommitLineSuggestionAsync(
@@ -478,6 +489,7 @@ namespace BLL.Services
                 Status = task.Status.ToString(),
                 Priority = task.Priority.ToString(),
                 DueDate = task.DueDate,
+                WorkHours = task.WorkHours,
                 CompletedAt = task.CompletedAt,
                 CreatedAt = task.CreatedAt,
                 UpdatedAt = task.UpdatedAt,
@@ -613,6 +625,11 @@ namespace BLL.Services
 
             compact = compact.TrimEnd('.', ';', ':');
             return compact.Length <= 72 ? compact : compact[..72].TrimEnd();
+        }
+
+        private static int? ResolveProjectIdFromTask(DAL.Models.Task task)
+        {
+            return task.Requirement?.ProjectId ?? task.JiraIssue?.ProjectId;
         }
 
         public async Task<TaskStatisticsByStatusDTO> GetTaskStatisticsByStatusAsync(int userId)

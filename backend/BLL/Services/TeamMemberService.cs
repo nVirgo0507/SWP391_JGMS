@@ -153,7 +153,18 @@ namespace BLL.Services
                 task.CompletedAt = DateTime.UtcNow;
             }
 
+            if (dto.WorkHours.HasValue)
+            {
+                task.WorkHours = (task.WorkHours ?? 0) + dto.WorkHours.Value;
+            }
+
             await _taskRepository.UpdateAsync(task);
+
+            var projectId = ResolveProjectIdFromTask(task);
+            if (projectId.HasValue)
+            {
+                await _statisticRepository.RecalculateForUserProjectAsync(userId, projectId.Value);
+            }
 
             return MapToTaskResponse(task);
         }
@@ -198,7 +209,18 @@ namespace BLL.Services
 
             await _taskRepository.UpdateAsync(task);
 
+            var projectId = ResolveProjectIdFromTask(task);
+            if (projectId.HasValue)
+            {
+                await _statisticRepository.RecalculateForUserProjectAsync(userId, projectId.Value);
+            }
+
             return MapToTaskResponse(task);
+        }
+
+        private static int? ResolveProjectIdFromTask(DAL.Models.Task task)
+        {
+            return task.Requirement?.ProjectId ?? task.JiraIssue?.ProjectId;
         }
 
         /// <summary>
@@ -248,6 +270,7 @@ namespace BLL.Services
                 Title = task.Title,
                 Description = task.Description,
                 DueDate = task.DueDate,
+                WorkHours = task.WorkHours,
                 CompletedAt = task.CompletedAt,
                 CreatedAt = task.CreatedAt,
                 UpdatedAt = task.UpdatedAt,

@@ -27,6 +27,7 @@ namespace BLL.Services
         private readonly IRequirementRepository _requirementRepository;
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
+        private readonly IPersonalTaskStatisticRepository _personalTaskStatisticRepository;
         private readonly byte[] _encryptionKey;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
 
@@ -40,6 +41,7 @@ namespace BLL.Services
             IRequirementRepository requirementRepository,
             IJiraIntegrationRepository jiraIntegrationRepository,
             IJiraApiService jiraApiService,
+            IPersonalTaskStatisticRepository personalTaskStatisticRepository,
             IConfiguration configuration,
             ISrsDocumentRepository srsDocumentRepository)
         {
@@ -52,6 +54,7 @@ namespace BLL.Services
             _requirementRepository = requirementRepository;
             _jiraIntegrationRepository = jiraIntegrationRepository;
             _jiraApiService = jiraApiService;
+            _personalTaskStatisticRepository = personalTaskStatisticRepository;
             _srsDocumentRepository = srsDocumentRepository;
             // Derive the same stable AES-GCM key as JiraIntegrationService
             var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
@@ -542,6 +545,11 @@ namespace BLL.Services
 
             await _taskRepository.AddAsync(task);
 
+            if (task.AssignedTo.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(task.AssignedTo.Value, project.ProjectId);
+            }
+
             // Sync to Jira if the task is linked to a Jira issue
             if (task.JiraIssueId.HasValue)
             {
@@ -649,6 +657,11 @@ namespace BLL.Services
 
             await _taskRepository.AddAsync(task);
 
+            if (task.AssignedTo.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(task.AssignedTo.Value, project.ProjectId);
+            }
+
             // Sync changes back to Jira
             var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
             if (integration != null)
@@ -709,6 +722,7 @@ namespace BLL.Services
 
             var task = await _taskRepository.GetByIdAsync(taskId);
             if (task == null) throw new Exception("Task not found");
+            var previousAssignee = task.AssignedTo;
 
             // Validate new assignee is a group member
             if (dto.AssignedTo.HasValue && !await _memberRepository.IsMemberOfGroupAsync(groupId, dto.AssignedTo.Value))
@@ -736,6 +750,15 @@ namespace BLL.Services
                 task.CompletedAt = DateTime.UtcNow;
 
             await _taskRepository.UpdateAsync(task);
+
+            if (previousAssignee.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(previousAssignee.Value, project.ProjectId);
+            }
+            if (task.AssignedTo.HasValue && task.AssignedTo != previousAssignee)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(task.AssignedTo.Value, project.ProjectId);
+            }
 
             // Sync changes back to Jira
             if (task.JiraIssueId.HasValue)
@@ -806,11 +829,22 @@ namespace BLL.Services
             if (!await _memberRepository.IsMemberOfGroupAsync(groupId, memberId))
                 throw new Exception("Member is not part of this group");
 
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
             var task = await _taskRepository.GetByIdAsync(taskId);
             if (task == null) throw new Exception("Task not found");
 
+            var previousAssignee = task.AssignedTo;
+
             task.AssignedTo = memberId;
             await _taskRepository.UpdateAsync(task);
+
+            if (previousAssignee.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(previousAssignee.Value, project.ProjectId);
+            }
+            await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(memberId, project.ProjectId);
         }
 
         public async System.Threading.Tasks.Task DeleteTaskAsync(int userId, int groupId, int taskId)
@@ -1130,6 +1164,7 @@ namespace BLL.Services
             Status = task.Status.ToString(),
             Priority = ToJiraPriority(task.Priority),
             DueDate = task.DueDate,
+            WorkHours = task.WorkHours,
             CompletedAt = task.CompletedAt,
             SprintId = task.JiraIssue?.SprintId,
             SprintName = task.JiraIssue?.SprintName,
