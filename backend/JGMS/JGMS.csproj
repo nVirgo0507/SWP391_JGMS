@@ -7,6 +7,7 @@
         <RootNamespace>SWP391_JGMS</RootNamespace>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>$(NoWarn);1591</NoWarn>
+        <UserSecretsId>74c88e55-cf0e-4d5f-acfd-49fe0afabdd3</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>

@@ -45,6 +45,33 @@ namespace DAL.Repositories
                                && (excludeId == null || r.RequirementId != excludeId));
         }
 
+        public async System.Threading.Tasks.Task<bool> HasSrsReferencesAsync(int requirementId)
+        {
+            return await _context.SrsIncludedRequirements
+                .AnyAsync(r => r.RequirementId == requirementId);
+        }
+
+        public async System.Threading.Tasks.Task<int> UnlinkTasksAsync(int requirementId)
+        {
+            var linkedTasks = await _context.Tasks
+                .Where(t => t.RequirementId == requirementId)
+                .ToListAsync();
+
+            if (!linkedTasks.Any())
+            {
+                return 0;
+            }
+
+            foreach (var task in linkedTasks)
+            {
+                task.RequirementId = null;
+                task.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return linkedTasks.Count;
+        }
+
         public async System.Threading.Tasks.Task AddAsync(Requirement requirement)
         {
             requirement.CreatedAt = DateTime.UtcNow;

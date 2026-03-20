@@ -18,6 +18,14 @@ namespace BLL.Services.Interface
         Task RemoveStudentFromGroupAsync(int lecturerId, int groupId, string studentIdentifier);
 
         Task<StudentGroupResponseDTO> UpdateGroupAsync(int lecturerId, int groupId, UpdateStudentGroupDTO dto);
+
+        Task<List<RequirementResponseDTO>> GetGroupRequirementsAsync(int lecturerId, int groupId);
+
+        Task<List<TaskResponseDTO>> GetGroupTasksAsync(int lecturerId, int groupId);
+
+        Task<List<ProgressReportResponseDTO>> GetProjectProgressReportsAsync(int lecturerId, int groupId);
+
+        Task<GroupCommitStatisticsResponseDTO> GetGithubCommitStatisticsAsync(int lecturerId, int groupId);
     }
 }
 

@@ -81,8 +81,13 @@ namespace DAL.Repositories
         public async System.Threading.Tasks.Task<List<DAL.Models.Task>> GetTasksByProjectIdAsync(int projectId)
         {
             return await _context.Tasks
+                .Include(t => t.AssignedToNavigation)
+                .Include(t => t.JiraIssue)
                 .Include(t => t.Requirement)
-                .Where(t => t.Requirement != null && t.Requirement.ProjectId == projectId)
+                .Where(t =>
+                    (t.Requirement != null && t.Requirement.ProjectId == projectId)
+                    || (t.JiraIssue != null && t.JiraIssue.ProjectId == projectId))
+                .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync();
         }
 

@@ -31,6 +31,25 @@ namespace DAL.Repositories
                 .FirstOrDefaultAsync(p => p.GroupId == groupId);
         }
 
+        public async Task<List<ProgressReport>> GetProgressReportsByProjectIdAsync(int projectId)
+        {
+            return await _context.ProgressReports
+                .Include(r => r.GeneratedByNavigation)
+                .Where(r => r.ProjectId == projectId)
+                .OrderByDescending(r => r.GeneratedAt)
+                .ToListAsync();
+        }
+
+        public async Task<List<CommitStatistic>> GetCommitStatisticsByProjectIdAsync(int projectId)
+        {
+            return await _context.CommitStatistics
+                .Include(s => s.User)
+                .Where(s => s.ProjectId == projectId)
+                .OrderByDescending(s => s.PeriodEnd)
+                .ThenByDescending(s => s.UpdatedAt)
+                .ToListAsync();
+        }
+
         public async Task<List<Project>> GetAllAsync()
         {
             return await _context.Projects

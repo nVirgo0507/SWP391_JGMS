@@ -423,6 +423,13 @@ public partial class JgmsContext : DbContext
                 .HasColumnName("priority")
                 .HasColumnType("jira_priority");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
+            entity.Property(e => e.SprintId).HasColumnName("sprint_id");
+            entity.Property(e => e.SprintName)
+                .HasMaxLength(255)
+                .HasColumnName("sprint_name");
+            entity.Property(e => e.SprintState)
+                .HasMaxLength(50)
+                .HasColumnName("sprint_state");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
