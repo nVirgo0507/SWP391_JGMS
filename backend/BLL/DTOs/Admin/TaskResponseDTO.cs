@@ -37,6 +37,8 @@ namespace BLL.DTOs.Admin
 
         public DateOnly? DueDate { get; set; }
 
+        public int? WorkHours { get; set; }
+
         public DateTime? CompletedAt { get; set; }
 
         /// <summary>Jira sprint ID if the linked issue belongs to a sprint</summary>

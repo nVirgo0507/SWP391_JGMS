@@ -6,5 +6,6 @@ namespace DAL.Repositories.Interface
     {
         Task<PersonalTaskStatistic?> GetByUserIdAndProjectIdAsync(int userId, int projectId);
         Task<List<PersonalTaskStatistic>> GetByUserIdAsync(int userId);
+        System.Threading.Tasks.Task RecalculateForUserProjectAsync(int userId, int projectId);
     }
 }

@@ -245,6 +245,7 @@ CREATE TABLE TASK (
     status task_status DEFAULT 'todo',
     priority priority_level DEFAULT 'medium',
     due_date DATE,
+    work_hours INTEGER DEFAULT 0,
     completed_at TIMESTAMP,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

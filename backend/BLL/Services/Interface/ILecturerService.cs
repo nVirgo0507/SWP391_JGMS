@@ -25,6 +25,12 @@ namespace BLL.Services.Interface
 
         Task<List<ProgressReportResponseDTO>> GetProjectProgressReportsAsync(int lecturerId, int groupId);
 
+        Task<(byte[] content, string fileName, string contentType)> ExportProjectProgressReportAsync(
+            int lecturerId,
+            int groupId,
+            int reportId,
+            string format);
+
         Task<GroupCommitStatisticsResponseDTO> GetGithubCommitStatisticsAsync(int lecturerId, int groupId);
     }
 }

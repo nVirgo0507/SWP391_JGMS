@@ -168,6 +168,7 @@ public class Program
 		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
 		builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
+		builder.Services.AddScoped<ICommitStatisticRepository, CommitStatisticRepository>();
 		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
 		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
 		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();

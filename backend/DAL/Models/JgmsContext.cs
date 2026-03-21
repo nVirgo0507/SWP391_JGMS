@@ -522,6 +522,9 @@ public partial class JgmsContext : DbContext
                 .HasColumnName("generated_at");
             entity.Property(e => e.GeneratedBy).HasColumnName("generated_by");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
+            entity.Property(e => e.ReportType)
+                .HasColumnName("report_type")
+                .HasColumnType("report_type");
             entity.Property(e => e.ReportData)
                 .HasColumnType("jsonb")
                 .HasColumnName("report_data");
@@ -799,6 +802,9 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
                 .HasColumnName("title");
+            entity.Property(e => e.WorkHours)
+                .HasDefaultValue(0)
+                .HasColumnName("work_hours");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")

@@ -13,6 +13,7 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ISrsDocumentRepository _srsRepository;
         private readonly IGroupMemberRepository _groupMemberRepository;
@@ -22,6 +23,7 @@ namespace BLL.Services
             IUserRepository userRepository,
             ITaskRepository taskRepository,
             ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository,
             IPersonalTaskStatisticRepository statisticRepository,
             ISrsDocumentRepository srsRepository,
             IGroupMemberRepository groupMemberRepository,
@@ -30,6 +32,7 @@ namespace BLL.Services
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
             _statisticRepository = statisticRepository;
             _srsRepository = srsRepository;
             _groupMemberRepository = groupMemberRepository;
@@ -101,6 +104,11 @@ namespace BLL.Services
                 task.CompletedAt = DateTime.UtcNow;
             }
 
+            if (dto.WorkHours.HasValue)
+            {
+                task.WorkHours = (task.WorkHours ?? 0) + dto.WorkHours.Value;
+            }
+
             // TODO: Integrate with Jira API when implemented
             // - Update Jira issue status via API if task.JiraIssueId is present
             // - Post dto.Comment as Jira comment if provided
@@ -108,6 +116,12 @@ namespace BLL.Services
             // Example: await _jiraService.UpdateIssueAsync(task.JiraIssueId, dto.Status, dto.Comment, dto.WorkHours);
 
             await _taskRepository.UpdateAsync(task);
+
+            var projectId = ResolveProjectIdFromTask(task);
+            if (projectId.HasValue)
+            {
+                await _statisticRepository.RecalculateForUserProjectAsync(userId, projectId.Value);
+            }
         }
 
         public async System.Threading.Tasks.Task<CommitLineSuggestionResponseDTO> GenerateCommitLineSuggestionAsync(
@@ -214,45 +228,77 @@ namespace BLL.Services
         {
             var statisticsDto = new PersonalStatisticsDTO();
 
-            // Get task statistics
+            // Get task statistics from live TASK rows to avoid stale/empty snapshot results.
+            var tasks = await _taskRepository.GetTasksByUserIdAsync(userId);
             if (projectId.HasValue)
             {
-                var taskStats = await _statisticRepository.GetByUserIdAndProjectIdAsync(userId, projectId.Value);
-                if (taskStats != null)
-                {
-                    statisticsDto.TotalTasks = taskStats.TotalTasks ?? 0;
-                    statisticsDto.CompletedTasks = taskStats.CompletedTasks ?? 0;
-                    statisticsDto.InProgressTasks = taskStats.InProgressTasks ?? 0;
-                    statisticsDto.OverdueTasks = taskStats.OverdueTasks ?? 0;
-                    statisticsDto.CompletionRate = taskStats.CompletionRate ?? 0;
-                    statisticsDto.LastCalculated = taskStats.LastCalculated;
-                }
-            }
-            else
-            {
-                // Calculate aggregate statistics across all projects
-                var allStats = await _statisticRepository.GetByUserIdAsync(userId);
-                statisticsDto.TotalTasks = allStats.Sum(s => s.TotalTasks ?? 0);
-                statisticsDto.CompletedTasks = allStats.Sum(s => s.CompletedTasks ?? 0);
-                statisticsDto.InProgressTasks = allStats.Sum(s => s.InProgressTasks ?? 0);
-                statisticsDto.OverdueTasks = allStats.Sum(s => s.OverdueTasks ?? 0);
-                statisticsDto.CompletionRate = statisticsDto.TotalTasks > 0
-                    ? (decimal)statisticsDto.CompletedTasks / statisticsDto.TotalTasks * 100
-                    : 0;
-                statisticsDto.LastCalculated = allStats.Any()
-                    ? allStats.Max(s => s.LastCalculated)
-                    : null;
+                tasks = tasks
+                    .Where(t => (t.Requirement?.ProjectId == projectId.Value) || (t.JiraIssue?.ProjectId == projectId.Value))
+                    .ToList();
             }
 
-            // Get commit statistics
+            var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+            statisticsDto.TotalTasks = tasks.Count;
+            statisticsDto.CompletedTasks = tasks.Count(t => t.Status == DAL.Models.TaskStatus.done || t.CompletedAt.HasValue);
+            statisticsDto.InProgressTasks = tasks.Count(t => t.Status == DAL.Models.TaskStatus.in_progress);
+            statisticsDto.OverdueTasks = tasks.Count(t =>
+                t.DueDate.HasValue
+                && t.DueDate.Value < today
+                && t.Status != DAL.Models.TaskStatus.done
+                && !t.CompletedAt.HasValue);
+            statisticsDto.CompletionRate = statisticsDto.TotalTasks > 0
+                ? (decimal)statisticsDto.CompletedTasks / statisticsDto.TotalTasks * 100
+                : 0;
+            statisticsDto.LastCalculated = DateTime.UtcNow;
+
+            // Get commit statistics (commit_statistics is the primary source).
             var commits = projectId.HasValue
                 ? await _commitRepository.GetCommitsByUserIdAndProjectIdAsync(userId, projectId.Value)
                 : await _commitRepository.GetCommitsByUserIdAsync(userId);
 
-            statisticsDto.TotalCommits = commits.Count;
-            statisticsDto.TotalAdditions = commits.Sum(c => c.Additions ?? 0);
-            statisticsDto.TotalDeletions = commits.Sum(c => c.Deletions ?? 0);
-            statisticsDto.TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0);
+            var recalcProjectIds = projectId.HasValue
+                ? new List<int> { projectId.Value }
+                : commits.Select(c => c.ProjectId).Distinct().ToList();
+
+            foreach (var pid in recalcProjectIds)
+            {
+                try
+                {
+                    await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
+                }
+                catch
+                {
+                    // Best-effort refresh: serve statistics from current commit rows even if snapshot refresh fails.
+                }
+            }
+
+            if (projectId.HasValue)
+            {
+                var stat = await _commitStatisticRepository.GetLatestByUserAndProjectIdAsync(userId, projectId.Value);
+                statisticsDto.TotalCommits = stat?.TotalCommits ?? commits.Count;
+                statisticsDto.TotalAdditions = stat?.TotalAdditions ?? commits.Sum(c => c.Additions ?? 0);
+                statisticsDto.TotalDeletions = stat?.TotalDeletions ?? commits.Sum(c => c.Deletions ?? 0);
+                statisticsDto.TotalChangedFiles = stat?.TotalChangedFiles ?? commits.Sum(c => c.ChangedFiles ?? 0);
+            }
+            else
+            {
+                var stats = await _commitStatisticRepository.GetLatestByUserIdAsync(userId);
+                if (stats.Any())
+                {
+                    statisticsDto.TotalCommits = stats.Sum(s => s.TotalCommits ?? 0);
+                    statisticsDto.TotalAdditions = stats.Sum(s => s.TotalAdditions ?? 0);
+                    statisticsDto.TotalDeletions = stats.Sum(s => s.TotalDeletions ?? 0);
+                    statisticsDto.TotalChangedFiles = stats.Sum(s => s.TotalChangedFiles ?? 0);
+                }
+                else
+                {
+                    statisticsDto.TotalCommits = commits.Count;
+                    statisticsDto.TotalAdditions = commits.Sum(c => c.Additions ?? 0);
+                    statisticsDto.TotalDeletions = commits.Sum(c => c.Deletions ?? 0);
+                    statisticsDto.TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0);
+                }
+            }
+
             statisticsDto.LastCommitDate = commits.Any() ? commits.Max(c => c.CommitDate) : null;
 
             return statisticsDto;
@@ -478,6 +524,7 @@ namespace BLL.Services
                 Status = task.Status.ToString(),
                 Priority = task.Priority.ToString(),
                 DueDate = task.DueDate,
+                WorkHours = task.WorkHours,
                 CompletedAt = task.CompletedAt,
                 CreatedAt = task.CreatedAt,
                 UpdatedAt = task.UpdatedAt,
@@ -613,6 +660,11 @@ namespace BLL.Services
 
             compact = compact.TrimEnd('.', ';', ':');
             return compact.Length <= 72 ? compact : compact[..72].TrimEnd();
+        }
+
+        private static int? ResolveProjectIdFromTask(DAL.Models.Task task)
+        {
+            return task.Requirement?.ProjectId ?? task.JiraIssue?.ProjectId;
         }
 
         public async Task<TaskStatisticsByStatusDTO> GetTaskStatisticsByStatusAsync(int userId)

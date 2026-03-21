@@ -267,6 +267,40 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Export a progress report for the assigned group's project.
+        /// Supported formats: word, pdf.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports/{reportId}/export")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> ExportProjectProgressReport(string groupCode, int reportId, [FromQuery] string format = "pdf")
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var (content, fileName, contentType) = await _lecturerService.ExportProjectProgressReportAsync(
+                    GetCurrentUserId(),
+                    groupId,
+                    reportId,
+                    format);
+
+                return File(content, contentType, fileName);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied"))
+                    return StatusCode(403, new { message = ex.Message });
+                if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                    return NotFound(new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get aggregated GitHub commit statistics for the assigned group's project.
         /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
