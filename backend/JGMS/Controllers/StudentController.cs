@@ -523,6 +523,31 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Get guided template for creating progress reports. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports/template")]
+        [ProducesResponseType(typeof(ProgressReportTemplateDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGroupProgressReportTemplate(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var template = await _teamLeaderService.GetGroupProgressReportTemplateAsync(GetCurrentUserId(), groupId);
+                return Ok(template);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Create a new progress report for a group project. Leader only.
         /// </summary>
         [HttpPost("groups/{groupCode}/progress-reports")]

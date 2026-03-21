@@ -262,7 +262,14 @@ namespace BLL.Services
 
             foreach (var pid in recalcProjectIds)
             {
-                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
+                try
+                {
+                    await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
+                }
+                catch
+                {
+                    // Best-effort refresh: serve statistics from current commit rows even if snapshot refresh fails.
+                }
             }
 
             if (projectId.HasValue)
