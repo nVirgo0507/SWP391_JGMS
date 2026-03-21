@@ -71,6 +71,8 @@ namespace BLL.Services
                     RepoOwner = dto.RepoOwner,
                     RepoName = dto.RepoName,
                     RepoUrl = dto.RepoUrl,
+                    LastSync = null,
+                    SyncStatus = SyncStatus.pending,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -82,6 +84,9 @@ namespace BLL.Services
                 existingIntegration.RepoOwner = dto.RepoOwner;
                 existingIntegration.RepoName = dto.RepoName;
                 existingIntegration.RepoUrl = dto.RepoUrl;
+                // Reconfiguration should restart sync window to avoid stale incremental cursors.
+                existingIntegration.LastSync = null;
+                existingIntegration.SyncStatus = SyncStatus.pending;
                 existingIntegration.UpdatedAt = DateTime.UtcNow;
 
                 await _githubIntegrationRepository.UpdateAsync(existingIntegration);

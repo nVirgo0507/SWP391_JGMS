@@ -34,7 +34,7 @@ namespace BLL.Services
             _githubIntegrationRepository = githubIntegrationRepository;
         }
 
-        public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId)
+        public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId, bool forceFullResync = false)
         {
             var startedAt = DateTime.UtcNow;
 
@@ -44,8 +44,36 @@ namespace BLL.Services
             try
             {
                 var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
-                var since = integration?.LastSync;
-                var commits = await _githubApiService.GetCommitsAsync(projectId, since);
+                if (integration == null)
+                {
+                    throw new Exception($"GitHub integration not found for project {projectId}");
+                }
+
+                var since = forceFullResync ? null : integration.LastSync;
+                DateTime? effectiveSince = since;
+
+                if (!forceFullResync && effectiveSince.HasValue)
+                {
+                    // Guard against bad/future cursor values, then use overlap to avoid missing delayed pushes.
+                    var now = DateTime.UtcNow;
+                    if (effectiveSince.Value > now)
+                    {
+                        effectiveSince = now.AddHours(-1);
+                    }
+
+                    effectiveSince = effectiveSince.Value.AddHours(-24);
+                }
+
+                var commits = await _githubApiService.GetCommitsAsync(projectId, effectiveSince);
+
+                // If incremental window returns nothing, do a bounded backfill pass so manually
+                // deleted raw rows can be re-created even without new pushes.
+                if (!forceFullResync && effectiveSince.HasValue && commits.Count == 0)
+                {
+                    var backfillSince = DateTime.UtcNow.AddDays(-90);
+                    commits = await _githubApiService.GetCommitsAsync(projectId, backfillSince);
+                }
+
                 var fetchedCount = commits.Count;
 
                 // Existing raw commits in DB (used for SHA dedupe and local-commit recovery).
@@ -58,16 +86,23 @@ namespace BLL.Services
                 var duplicateSkipped = 0;
 
                 // Merge note: keep the dedupe set and tuple list declared above.
-                
+
                 // Group by SHA to get distinct commits (in case the API returns duplicates)
                 var uniqueCommits = commits.GroupBy(c => c.Sha).Select(g => g.First()).ToList();
-                var dtosBySha = uniqueCommits.ToDictionary(c => c.Sha, c => c);
 
                 foreach (var dto in uniqueCommits)
                 {
                     if (existingShas.Contains(dto.Sha))
                     {
                         duplicateSkipped++;
+                        continue;
+                    }
+
+                    // commit_sha is globally unique in DB; skip if another project already inserted it.
+                    if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
+                    {
+                        duplicateSkipped++;
+                        existingShas.Add(dto.Sha);
                         continue;
                     }
 
@@ -150,8 +185,8 @@ namespace BLL.Services
                 return new GithubSyncSummaryDto
                 {
                     ProjectId = projectId,
-                    IncrementalSync = since.HasValue,
-                    Since = since,
+                    IncrementalSync = !forceFullResync && since.HasValue,
+                    Since = effectiveSince,
                     GithubFetched = fetchedCount,
                     DuplicateShaSkipped = duplicateSkipped,
                     NewRawGithubCommits = newGithubCommits.Count,

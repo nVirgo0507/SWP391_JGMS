@@ -67,11 +67,11 @@ namespace JGMS.Controllers
         }
 
         [HttpPost("{projectId}/sync")]
-        public async Task<ActionResult> SyncCommits(int projectId)
+        public async Task<ActionResult> SyncCommits(int projectId, [FromQuery] bool forceFullResync = false)
         {
             try
             {
-                var summary = await _githubIntegrationService.SyncCommitsAsync(projectId);
+                var summary = await _githubIntegrationService.SyncCommitsAsync(projectId, forceFullResync);
                 return Ok(summary);
             }
             catch (Exception ex)
