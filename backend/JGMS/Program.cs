@@ -10,7 +10,6 @@ using Microsoft.OpenApi.Models;
 using Npgsql;
 using Npgsql.NameTranslation;
 using System.Text;
-using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 
 namespace SWP391_JGMS;
@@ -20,6 +19,13 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+
+		// Render-style environments expose PORT; bind explicitly to IPv4 for reliable detection.
+		var port = Environment.GetEnvironmentVariable("PORT");
+		if (!string.IsNullOrWhiteSpace(port) && int.TryParse(port, out var parsedPort))
+		{
+			builder.WebHost.UseUrls($"http://0.0.0.0:{parsedPort}");
+		}
 
         // Add services to the container.
 
@@ -207,12 +213,6 @@ public class Program
 
         var app = builder.Build();
 
-		using (var scope = app.Services.CreateScope())
-		{
-			var context = scope.ServiceProvider.GetRequiredService<JgmsContext>();
-			DbInitializer.SeedAdmin(context);
-		}
-
 		// Run SQL migrations on every startup — only unapplied files are executed
 		using (var scope = app.Services.CreateScope())
 		{
@@ -222,6 +222,9 @@ public class Program
 			// Resolve the migrations folder relative to the app's content root
 			var migrationsFolder = Path.Combine(app.Environment.ContentRootPath, "migrations");
 			MigrationRunner.Run(connectionString, migrationsFolder, logger);
+
+			var context = scope.ServiceProvider.GetRequiredService<JgmsContext>();
+			DbInitializer.SeedAdmin(context);
 		}
 
 		// Swagger — available in all environments for team access
@@ -241,12 +244,6 @@ public class Program
 		app.UseAuthorization();
         app.MapControllers();
 
-        // Initialize database
-        using (var scope = app.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<JgmsContext>();
-            dbContext.Database.EnsureCreated();
-        }
 
         app.Run();
     }

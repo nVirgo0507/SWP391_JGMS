@@ -26,7 +26,7 @@ EXPOSE 8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 
 # Use shell form so $PORT is expanded at runtime; default to 8080
-CMD ASPNETCORE_URLS=http://+:${PORT:-8080} dotnet JGMS.dll
+CMD ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080} dotnet JGMS.dll
 
 
 
