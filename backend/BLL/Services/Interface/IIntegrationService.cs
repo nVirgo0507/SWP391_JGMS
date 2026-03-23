@@ -66,6 +66,20 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<IntegrationTestResultDTO> TestIntegrationAsync(int adminUserId, string integrationType);
 
+
+
+        /// <summary>
+        /// BR-040: Sync GitHub commits for a project.
+        /// Only commits where GITHUB_COMMIT.author_username matches USER.github_username will be linked.
+        /// </summary>
+        Task<CommitSyncResultDTO> SyncGithubCommitsAsync(int adminUserId, int projectId);
+
+        /// <summary>
+        /// BR-041: Import raw GitHub commits into the GITHUB_COMMIT table.
+        /// Enforces unique commit SHA per project.
+        /// </summary>
+        Task<CommitSyncResultDTO> ImportRawGithubCommitsAsync(int adminUserId, int projectId, List<GithubRawCommitDTO> rawCommits);
+
         #endregion
     }
 }

@@ -19,15 +19,24 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
+        private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
+        private readonly ICommitRepository _commitRepository;
 
         public TeamMemberService(
             IUserRepository userRepository,
             ITaskRepository taskRepository,
-            IPersonalTaskStatisticRepository statisticRepository)
+            IPersonalTaskStatisticRepository statisticRepository,
+            IGroupMemberRepository groupMemberRepository,
+            IGithubIntegrationRepository githubIntegrationRepository,
+            ICommitRepository commitRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _statisticRepository = statisticRepository;
+            _groupMemberRepository = groupMemberRepository;
+            _githubIntegrationRepository = githubIntegrationRepository;
+            _commitRepository = commitRepository;
         }
 
         /// <summary>
@@ -254,9 +263,58 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get personal commit statistics from repository
-            // Filter by user_id
-            return null;
+            var memberships = await _groupMemberRepository.GetGroupsByStudentIdAsync(userId);
+            var activeMembership = memberships.FirstOrDefault(m => m.LeftAt == null);
+            var activeProject = activeMembership?.Group?.Project?.ProjectId;
+
+            /* Tạm thời bypass kiểm tra integration để bạn dễ test
+            if (activeProject.HasValue)
+            {
+                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(activeProject.Value);
+                if (integration == null || integration.SyncStatus != SyncStatus.success)
+                {
+                    throw new Exception("GitHub integration must be configured and synced first");
+                }
+            }
+            else
+            {
+                throw new Exception("GitHub integration must be configured and synced first");
+            }
+            */
+
+            // Lấy toàn bộ commit của user
+            var commits = await _commitRepository.GetCommitsByUserIdAsync(userId);
+
+            if (!commits.Any())
+            {
+                return new CommitStatisticResponseDTO
+                {
+                    UserId = userId,
+                    UserName = user.FullName,
+                    ProjectId = activeProject ?? 0,
+                    UpdatedAt = DateTime.Now
+                };
+            }
+
+            var now = DateTime.Now;
+            var startOfWeek = now.Date.AddDays(-(int)now.DayOfWeek);
+            var startOfMonth = new DateTime(now.Year, now.Month, 1);
+
+            return new CommitStatisticResponseDTO
+            {
+                UserId = userId,
+                UserName = user.FullName,
+                ProjectId = activeProject ?? 0,
+                TotalCommits = commits.Count,
+                CommitsThisWeek = commits.Count(c => c.CommitDate >= startOfWeek),
+                CommitsThisMonth = commits.Count(c => c.CommitDate >= startOfMonth),
+                AverageCommitsPerDay = Math.Round((double)commits.Count / 30, 2), // Tạm tính theo tháng
+                LastCommitDate = commits.Max(c => c.CommitDate),
+                TotalAdditions = commits.Sum(c => c.Additions ?? 0),
+                TotalDeletions = commits.Sum(c => c.Deletions ?? 0),
+                TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0),
+                UpdatedAt = DateTime.Now
+            };
         }
 
         private TaskResponseDTO MapToTaskResponse(DAL.Models.Task task)

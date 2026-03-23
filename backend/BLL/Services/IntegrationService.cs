@@ -2,6 +2,7 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
+using System;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -18,17 +19,20 @@ namespace BLL.Services
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
         private readonly IGithubApiService _githubApiService;
         private readonly ITokenEncryptionService _tokenEncryption;
+        private readonly IGithubSyncService _githubSyncService;
 
         public IntegrationService(
             IUserRepository userRepository,
             IGithubIntegrationRepository githubIntegrationRepository,
             IGithubApiService githubApiService,
-            ITokenEncryptionService tokenEncryptionService)
+            ITokenEncryptionService tokenEncryptionService,
+            IGithubSyncService githubSyncService)
         {
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
             _githubApiService = githubApiService;
             _tokenEncryption = tokenEncryptionService;
+            _githubSyncService = githubSyncService;
         }
 
         /// <summary>
@@ -157,6 +161,28 @@ namespace BLL.Services
                 GithubUsername = targetUser.GithubUsername,
                 JiraAccountId = targetUser.JiraAccountId
             };
+        }
+
+
+
+        /// <summary>
+        /// BR-040: Sync GitHub commits for a project.
+        /// Only links commits where GITHUB_COMMIT.author_username matches USER.github_username.
+        /// </summary>
+        public async Task<CommitSyncResultDTO> SyncGithubCommitsAsync(int adminUserId, int projectId)
+        {
+            await ValidateAdminAccessAsync(adminUserId);
+            return await _githubSyncService.SyncCommitsAsync(projectId);
+        }
+
+        /// <summary>
+        /// BR-041: Import raw GitHub commits into the GITHUB_COMMIT table.
+        /// Enforces unique commit SHA per project.
+        /// </summary>
+        public async Task<CommitSyncResultDTO> ImportRawGithubCommitsAsync(int adminUserId, int projectId, List<DTOs.Admin.GithubRawCommitDTO> rawCommits)
+        {
+            await ValidateAdminAccessAsync(adminUserId);
+            return await _githubSyncService.ImportRawCommitsAsync(projectId, rawCommits);
         }
 
         #endregion

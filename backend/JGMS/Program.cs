@@ -168,6 +168,8 @@ public class Program
 		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
 		builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
+		builder.Services.AddScoped<IGithubCommitRepository, GithubCommitRepository>();
+		builder.Services.AddScoped<IGithubIntegrationRepository, GithubIntegrationRepository>();
 		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
 		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
 		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
@@ -194,7 +196,11 @@ public class Program
 		builder.Services.AddScoped<ITeamMemberService, TeamMemberService>();
 		// BR-058: Admin Integration Configuration service
 		builder.Services.AddScoped<IIntegrationService, IntegrationService>();
+		builder.Services.AddScoped<IGithubSyncService, GithubSyncService>();
 		builder.Services.AddScoped<IStudentService, StudentService>();
+		// GitHub Integration services
+		builder.Services.AddScoped<IGithubApiService, GithubApiService>();
+
 		// Jira Integration services
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
