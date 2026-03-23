@@ -20,11 +20,15 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-		// Render-style environments expose PORT; bind explicitly to IPv4 for reliable detection.
-		var port = Environment.GetEnvironmentVariable("PORT");
-		if (!string.IsNullOrWhiteSpace(port) && int.TryParse(port, out var parsedPort))
+		// Respect ASPNETCORE_URLS when provided (e.g., Docker CMD); otherwise fall back to PORT.
+		var aspnetcoreUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+		if (string.IsNullOrWhiteSpace(aspnetcoreUrls))
 		{
-			builder.WebHost.UseUrls($"http://0.0.0.0:{parsedPort}");
+			var port = Environment.GetEnvironmentVariable("PORT");
+			if (!string.IsNullOrWhiteSpace(port) && int.TryParse(port, out var parsedPort))
+			{
+				builder.WebHost.UseUrls($"http://0.0.0.0:{parsedPort}");
+			}
 		}
 
         // Add services to the container.

@@ -21,12 +21,12 @@ COPY --from=build /app/publish .
 # Copy SQL migration files so MigrationRunner can apply them on startup
 COPY database/migrations/ ./migrations/
 
-# Port config — cloud platforms (Render) set PORT env var at runtime
-EXPOSE 8080
+# Port config — Render web services typically route through PORT (default 10000)
+EXPOSE 10000
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-# Use shell form so $PORT is expanded at runtime; default to 8080
-CMD ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080} dotnet JGMS.dll
+# Expand PORT at runtime; default to 10000 when PORT is not injected
+CMD ["sh", "-c", "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-10000} exec dotnet JGMS.dll"]
 
 
 
