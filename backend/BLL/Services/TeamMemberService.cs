@@ -21,19 +21,28 @@ namespace BLL.Services
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ICommitRepository _commitRepository;
         private readonly ICommitStatisticRepository _commitStatisticRepository;
+        private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IProjectRepository _projectRepository;
+        private readonly IRequirementRepository _requirementRepository;
 
         public TeamMemberService(
             IUserRepository userRepository,
             ITaskRepository taskRepository,
             IPersonalTaskStatisticRepository statisticRepository,
             ICommitRepository commitRepository,
-            ICommitStatisticRepository commitStatisticRepository)
+            ICommitStatisticRepository commitStatisticRepository,
+            IGroupMemberRepository groupMemberRepository,
+            IProjectRepository projectRepository,
+            IRequirementRepository requirementRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _statisticRepository = statisticRepository;
             _commitRepository = commitRepository;
             _commitStatisticRepository = commitStatisticRepository;
+            _groupMemberRepository = groupMemberRepository;
+            _projectRepository = projectRepository;
+            _requirementRepository = requirementRepository;
         }
 
         /// <summary>
@@ -54,9 +63,11 @@ namespace BLL.Services
         /// </summary>
         private async System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
         {
-            // TODO: Check group_member table for user membership
-            // Verify user is part of the group to allow requirement viewing
-            // throw new Exception("Only team leaders can manage requirements");
+            var isMember = await _groupMemberRepository.IsMemberOfGroupAsync(groupId, userId);
+            if (!isMember)
+            {
+                throw new Exception("Access denied. You are not an active member of this group.");
+            }
         }
 
         #region Requirements Management (Read-Only)
@@ -78,9 +89,14 @@ namespace BLL.Services
             // BR-057: Validate user is member of the group before allowing requirement view
             await ValidateGroupMembershipAsync(userId, groupId);
 
-            // TODO: Get requirements from repository filtered by group_id
-            // Return empty list as placeholder until requirement repository is available
-            return new List<RequirementResponseDTO>();
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+            {
+                return new List<RequirementResponseDTO>();
+            }
+
+            var requirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            return requirements.Select(MapToRequirementResponse).ToList();
         }
 
         #endregion
@@ -381,6 +397,28 @@ namespace BLL.Services
                 CreatedAt = task.CreatedAt,
                 UpdatedAt = task.UpdatedAt,
                 AssignedToName = task.AssignedToNavigation?.FullName
+            };
+        }
+
+        private static RequirementResponseDTO MapToRequirementResponse(Requirement r)
+        {
+            return new RequirementResponseDTO
+            {
+                RequirementId = r.RequirementId,
+                ProjectId = r.ProjectId,
+                JiraIssueId = r.JiraIssueId,
+                JiraIssueKey = r.JiraIssue?.IssueKey,
+                RequirementCode = r.RequirementCode,
+                Title = r.Title,
+                Description = r.Description,
+                RequirementType = r.RequirementType.ToString(),
+                IssueType = r.JiraIssue?.IssueType,
+                Priority = r.Priority.ToString(),
+                JiraStatus = r.JiraIssue?.Status,
+                CreatedBy = r.CreatedBy,
+                CreatedByName = r.CreatedByNavigation?.FullName,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt
             };
         }
 

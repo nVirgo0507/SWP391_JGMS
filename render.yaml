@@ -6,9 +6,12 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    healthCheckPath: /swagger/index.html
     region: singapore
     plan: free
     envVars:
+      - key: PORT
+        value: 10000
       - key: ConnectionStrings__DefaultConnection
         sync: false  # set manually in Render dashboard
       - key: Jwt__Key
