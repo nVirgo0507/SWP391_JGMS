@@ -122,8 +122,6 @@ namespace DAL.Repositories
             if (await _context.PersonalTaskStatistics.AnyAsync(p => p.ProjectId == projectId))
                 return (false, "Project has associated personal task statistics and cannot be deleted.");
 
-            if (await _context.TeamCommitSummaries.AnyAsync(t => t.ProjectId == projectId))
-                return (false, "Project has associated team commit summaries and cannot be deleted.");
 
             return (true, null);
         }
