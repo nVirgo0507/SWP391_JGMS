@@ -1,4 +1,4 @@
-﻿﻿using BLL.DTOs.Admin;
+﻿using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
@@ -710,6 +710,8 @@ namespace BLL.Services
                 LecturerName = group.Lecturer.FullName,
                 LeaderId    = group.LeaderId,
                 LeaderName  = group.Leader?.FullName,
+                ProjectId   = group.Project?.ProjectId,
+                ProjectName = group.Project?.ProjectName,
                 Status      = group.Status,
                 MemberCount = activeMembers.Count,
                 Members     = activeMembers,
