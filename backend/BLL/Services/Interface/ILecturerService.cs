@@ -1,10 +1,13 @@
 using BLL.DTOs.Admin;
+using AdminDTOs = BLL.DTOs.Admin;
 using System.Threading.Tasks;
 
 namespace BLL.Services.Interface
 {
     public interface ILecturerService
     {
+        Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int lecturerId);
+
         Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId);
 
         Task<List<StudentGroupResponseDTO>> GetMyGroupsAsync(int lecturerId);

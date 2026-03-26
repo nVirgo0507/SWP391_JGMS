@@ -1,4 +1,5 @@
 using BLL.DTOs.Admin;
+using AdminDTOs = BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -39,6 +40,28 @@ namespace BLL.Services
             _projectRepository = projectRepository;
             _commitRepository = commitRepository;
             _commitStatisticRepository = commitStatisticRepository;
+        }
+
+        public async Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int lecturerId)
+        {
+            var user = await _userRepository.GetByIdAsync(lecturerId);
+
+            if (user == null || user.Role != UserRole.lecturer)
+            {
+                throw new Exception("Lecturer not found");
+            }
+
+            return new AdminDTOs.UserResponseDTO
+            {
+                UserId = user.UserId,
+                Email = user.Email,
+                FullName = user.FullName,
+                Role = user.Role,
+                Phone = user.Phone,
+                Status = user.Status,
+                CreatedAt = user.CreatedAt,
+                UpdatedAt = user.UpdatedAt
+            };
         }
 
         public async Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId)

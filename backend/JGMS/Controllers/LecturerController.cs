@@ -36,6 +36,24 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Get current lecturer's profile information.
+        /// </summary>
+        [HttpGet("profile")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyProfile()
+        {
+            try
+            {
+                var profile = await _lecturerService.GetMyProfileAsync(GetCurrentUserId());
+                return Ok(profile);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get all groups assigned to the current lecturer.
         /// </summary>
         [HttpGet("groups")]
