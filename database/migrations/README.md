@@ -15,6 +15,10 @@ When you change the database schema, do **two things**:
 
 **You never need to run migrations manually again.** Just add the file and redeploy.
 
+> Important: Migrations must be idempotent (safe to run even if parts already exist).
+> Use `IF EXISTS` / `IF NOT EXISTS` or `DO $$ ... $$` guards, because some environments
+> may already have schema objects from `init.sql` while `schema_migrations` is still empty.
+
 ---
 
 ## Local testing with Docker
