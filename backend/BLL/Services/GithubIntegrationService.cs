@@ -34,6 +34,28 @@ namespace BLL.Services
             _githubIntegrationRepository = githubIntegrationRepository;
         }
 
+        public async Task<GithubIntegrationResponseDto?> GetIntegrationAsync(int projectId)
+        {
+            var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+            if (integration == null)
+            {
+                return null;
+            }
+
+            return new GithubIntegrationResponseDto
+            {
+                IntegrationId = integration.IntegrationId,
+                ProjectId = integration.ProjectId,
+                RepoUrl = integration.RepoUrl,
+                RepoOwner = integration.RepoOwner,
+                RepoName = integration.RepoName,
+                HasTokenConfigured = !string.IsNullOrWhiteSpace(integration.ApiToken),
+                SyncStatus = integration.SyncStatus.ToString(),
+                LastSync = integration.LastSync,
+                UpdatedAt = integration.UpdatedAt
+            };
+        }
+
         public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId, bool forceFullResync = false)
         {
             var startedAt = DateTime.UtcNow;

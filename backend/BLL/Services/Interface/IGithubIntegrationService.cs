@@ -5,6 +5,7 @@ namespace BLL.Services.Interface
 {
     public interface IGithubIntegrationService
     {
+        Task<GithubIntegrationResponseDto?> GetIntegrationAsync(int projectId);
         Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId, bool forceFullResync = false);
         Task ProcessWebhookEventAsync(string eventType, string payload);
     }

@@ -24,6 +24,25 @@ namespace JGMS.Controllers
             _githubIntegrationService = githubIntegrationService;
         }
 
+        [HttpGet("{projectId}/integration")]
+        public async Task<ActionResult<GithubIntegrationResponseDto>> GetIntegration(int projectId)
+        {
+            try
+            {
+                var integration = await _githubIntegrationService.GetIntegrationAsync(projectId);
+                if (integration == null)
+                {
+                    return NotFound(new { Message = "GitHub integration not configured for this project" });
+                }
+
+                return Ok(integration);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
+        }
+
         [HttpGet("{projectId}/branches")]
         public async Task<ActionResult<List<GithubBranchDto>>> GetBranches(int projectId)
         {
