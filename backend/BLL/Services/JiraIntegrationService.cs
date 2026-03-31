@@ -16,6 +16,7 @@ namespace BLL.Services
     {
         private readonly IJiraIntegrationRepository _jiraIntegrationRepo;
         private readonly IJiraIssueRepository _jiraIssueRepo;
+        private readonly IRequirementRepository _requirementRepo;
         private readonly IProjectRepository _projectRepo;
         private readonly IUserRepository _userRepo;
         private readonly IStudentGroupRepository _groupRepo;
@@ -26,6 +27,7 @@ namespace BLL.Services
         public JiraIntegrationService(
             IJiraIntegrationRepository jiraIntegrationRepo,
             IJiraIssueRepository jiraIssueRepo,
+            IRequirementRepository requirementRepo,
             IProjectRepository projectRepo,
             IUserRepository userRepo,
             IStudentGroupRepository groupRepo,
@@ -35,6 +37,7 @@ namespace BLL.Services
         {
             _jiraIntegrationRepo = jiraIntegrationRepo;
             _jiraIssueRepo = jiraIssueRepo;
+            _requirementRepo = requirementRepo;
             _projectRepo = projectRepo;
             _userRepo = userRepo;
             _groupRepo = groupRepo;
@@ -140,6 +143,39 @@ namespace BLL.Services
                     "Please reconfigure the Jira integration with a fresh API token.");
             }
         }
+
+        private async System.Threading.Tasks.Task SyncLinkedRequirementFromIssueAsync(JiraIssue issue)
+        {
+            var requirement = await _requirementRepo.GetByJiraIssueIdAsync(issue.JiraIssueId);
+            if (requirement == null)
+            {
+                return;
+            }
+
+            requirement.Title = issue.Summary;
+            requirement.Description = issue.Description;
+
+            if (issue.Priority.HasValue)
+            {
+                requirement.Priority = MapJiraPriorityToRequirementPriority(issue.Priority.Value);
+            }
+
+            // Keep the requirement in the same project as the synced Jira issue.
+            if (requirement.ProjectId != issue.ProjectId)
+            {
+                requirement.ProjectId = issue.ProjectId;
+            }
+
+            await _requirementRepo.UpdateAsync(requirement);
+        }
+
+        private static PriorityLevel MapJiraPriorityToRequirementPriority(JiraPriority jiraPriority) =>
+            jiraPriority switch
+            {
+                JiraPriority.highest or JiraPriority.high => PriorityLevel.high,
+                JiraPriority.low or JiraPriority.lowest => PriorityLevel.low,
+                _ => PriorityLevel.medium
+            };
 
         // ============================================================================
         // Admin: Configuration Management
@@ -434,6 +470,7 @@ namespace BLL.Services
                             };
 
                             await _jiraIssueRepo.AddAsync(newIssue);
+                            await SyncLinkedRequirementFromIssueAsync(newIssue);
                             result.NewIssues++;
                         }
                         else
@@ -467,6 +504,7 @@ namespace BLL.Services
                             existingIssue.UpdatedDate = jiraIssue.UpdatedDate;
 
                             await _jiraIssueRepo.UpdateAsync(existingIssue);
+                            await SyncLinkedRequirementFromIssueAsync(existingIssue);
                             result.UpdatedIssues++;
                         }
                     }
