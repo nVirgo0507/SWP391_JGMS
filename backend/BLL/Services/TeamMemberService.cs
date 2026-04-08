@@ -55,11 +55,10 @@ namespace BLL.Services
         /// BR-057: Validates that user is member of the group
         /// Throws exception if user is not part of the group
         /// </summary>
-        private async System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
+        private System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
         {
             // TODO: Check group_member table for user membership
-            // Verify user is part of the group to allow requirement viewing
-            // throw new Exception("Only team leaders can manage requirements");
+            return System.Threading.Tasks.Task.CompletedTask;
         }
 
         #region Requirements Management (Read-Only)

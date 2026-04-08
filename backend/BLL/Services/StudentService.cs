@@ -16,7 +16,9 @@ namespace BLL.Services
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ISrsDocumentRepository _srsRepository;
         private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraIssueRepository _jiraIssueRepository;
+        private readonly IGithubCommitRepository _githubCommitRepository;
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
 
         public StudentService(
@@ -27,6 +29,8 @@ namespace BLL.Services
             ISrsDocumentRepository srsRepository,
             IGroupMemberRepository groupMemberRepository,
             IJiraIssueRepository jiraIssueRepository,
+            IJiraIntegrationRepository jiraIntegrationRepository,
+            IGithubCommitRepository githubCommitRepository,
             IGithubIntegrationRepository githubIntegrationRepository)
         {
             _userRepository = userRepository;
@@ -36,6 +40,8 @@ namespace BLL.Services
             _srsRepository = srsRepository;
             _groupMemberRepository = groupMemberRepository;
             _jiraIssueRepository = jiraIssueRepository;
+            _jiraIntegrationRepository = jiraIntegrationRepository;
+            _githubCommitRepository = githubCommitRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
         }
 
@@ -452,7 +458,7 @@ namespace BLL.Services
 
             var group = activeMembership.Group;
 
-            return new MyGroupDTO
+            var dto = new MyGroupDTO
             {
                 GroupId = group.GroupId,
                 GroupCode = group.GroupCode,
@@ -474,6 +480,37 @@ namespace BLL.Services
                     })
                     .ToList()
             };
+
+            if (group.Project != null)
+            {
+                var pid = group.Project.ProjectId;
+                
+                var jira = await _jiraIntegrationRepository.GetByProjectIdAsync(pid);
+                if (jira != null)
+                {
+                    dto.JiraStatus = new AdminDTOs.ProjectIntegrationStatusDTO
+                    {
+                        IsConfigured = true,
+                        SyncStatus = jira.SyncStatus.ToString(),
+                        LastSync = jira.LastSync,
+                        TotalItems = await _jiraIssueRepository.GetCountByProjectIdAsync(pid)
+                    };
+                }
+
+                var github = await _githubIntegrationRepository.GetByProjectIdAsync(pid);
+                if (github != null)
+                {
+                    dto.GithubStatus = new AdminDTOs.ProjectIntegrationStatusDTO
+                    {
+                        IsConfigured = true,
+                        SyncStatus = github.SyncStatus.ToString(),
+                        LastSync = github.LastSync,
+                        TotalItems = await _githubCommitRepository.GetCountByProjectIdAsync(pid)
+                    };
+                }
+            }
+
+            return dto;
         }
 
         #endregion

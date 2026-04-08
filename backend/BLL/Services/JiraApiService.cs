@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Jira;
+using BLL.DTOs.Jira;
 using BLL.Services.Interface;
 using System.Net.Http.Headers;
 using System.Text;
@@ -129,19 +129,11 @@ namespace BLL.Services
                 var resp = await SendWithFallbackAsync(HttpMethod.Get, url, email, apiToken);
                 if (resp.IsSuccessStatusCode) return true;
 
-                var body = await resp.Content.ReadAsStringAsync();
-                resp.Headers.TryGetValues("X-Seraph-LoginReason", out var lr);
-                var reason = lr != null ? string.Join(",", lr) : $"{(int)resp.StatusCode}";
-                throw new Exception(
-                    $"Jira authentication failed ({reason}). " +
-                    $"Verify your email and API token at " +
-                    $"https://id.atlassian.com/manage-profile/security/api-tokens. " +
-                    $"Response: {body}");
+                return false;
             }
-            catch (Exception ex) when (!ex.Message.StartsWith("Jira authentication") &&
-                                       !ex.Message.StartsWith("Could not reach"))
+            catch (Exception)
             {
-                throw new Exception($"Could not reach Jira at '{jiraUrl}': {ex.Message}");
+                return false;
             }
         }
 

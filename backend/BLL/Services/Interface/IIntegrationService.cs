@@ -20,6 +20,12 @@ namespace BLL.Services.Interface
         Task<bool> ConfigureProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto);
 
         /// <summary>
+        /// BR-058: Update GitHub integration for a project (Admin only)
+        /// Enforces token encryption
+        /// </summary>
+        Task<bool> UpdateProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto);
+
+        /// <summary>
         /// BR-058: Configure GitHub integration for a user
         /// Only admin users can configure integrations
         /// Validates user role is admin before allowing configuration

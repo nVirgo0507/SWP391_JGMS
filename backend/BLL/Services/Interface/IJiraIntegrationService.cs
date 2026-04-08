@@ -1,4 +1,6 @@
-﻿using BLL.DTOs.Jira;
+using BLL.DTOs.Jira;
+using System.Collections.Generic;
+using Task = System.Threading.Tasks.Task;
 
 namespace BLL.Services.Interface
 {

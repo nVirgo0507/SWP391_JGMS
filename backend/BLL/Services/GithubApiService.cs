@@ -150,24 +150,21 @@ namespace BLL.Services
                 var client = new GitHubClient(new ProductHeaderValue("JGMS"));
                 client.Credentials = new Credentials(apiToken);
 
-                var repo = await client.Repository.Get(repoOwner, repoName);
-
-                if (repo == null)
-                    throw new Exception($"Repository '{repoOwner}/{repoName}' not found.");
+                await client.Repository.Get(repoOwner, repoName);
             }
             catch (Octokit.AuthorizationException)
             {
-                throw new Exception("Invalid GitHub API token. Please check your token and try again.");
+                throw new Exception("Invalid GitHub credentials or repository not found.");
             }
             catch (Octokit.NotFoundException)
             {
-                throw new Exception($"Repository '{repoOwner}/{repoName}' does not exist or is not accessible with the provided token.");
+                throw new Exception("Invalid GitHub credentials or repository not found.");
             }
             catch (Octokit.RateLimitExceededException)
             {
                 throw new Exception("GitHub API rate limit exceeded. Please try again later.");
             }
-            catch (Exception ex) when (!(ex.Message.StartsWith("Invalid") || ex.Message.StartsWith("Repository") || ex.Message.StartsWith("GitHub")))
+            catch (Exception ex)
             {
                 throw new Exception($"Failed to connect to GitHub: {ex.Message}");
             }

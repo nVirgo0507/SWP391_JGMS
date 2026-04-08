@@ -6,7 +6,9 @@ using DAL.Repositories.Interface;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
+using Task = System.Threading.Tasks.Task;
 
 namespace BLL.Services
 {
@@ -159,8 +161,23 @@ namespace BLL.Services
                     throw new Exception($"Jira issue with id {jiraIssueId} not found. Sync issues first.");
                 if (existingIssue.ProjectId != project.ProjectId)
                     throw new Exception("The specified Jira issue does not belong to this group's project.");
+
+                // BR-026: Jira integration must be configured and synced first
+                var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+                if (integration == null || integration.SyncStatus != SyncStatus.success)
+                {
+                    throw new Exception("Jira integration must be configured and synced first");
+                }
+
                 jiraIssueKey = existingIssue.IssueKey;
                 jiraStatus = existingIssue.Status;
+
+                // BR-030: One Jira Issue Per Requirement
+                var linkedReq = await _requirementRepository.GetByJiraIssueIdAsync(jiraIssueId.Value);
+                if (linkedReq != null)
+                {
+                    throw new Exception("This Jira issue is already mapped to another requirement");
+                }
             }
             else
             {
@@ -245,7 +262,16 @@ namespace BLL.Services
 
             if (dto.Title != null) requirement.Title = dto.Title;
             if (dto.Description != null) requirement.Description = dto.Description;
-            if (dto.JiraIssueId.HasValue) requirement.JiraIssueId = dto.JiraIssueId;
+            if (dto.JiraIssueId.HasValue)
+            {
+                // BR-030: One Jira Issue Per Requirement
+                var linkedReq = await _requirementRepository.GetByJiraIssueIdAsync(dto.JiraIssueId.Value);
+                if (linkedReq != null && linkedReq.RequirementId != requirementId)
+                {
+                    throw new Exception("This Jira issue is already mapped to another requirement");
+                }
+                requirement.JiraIssueId = dto.JiraIssueId;
+            }
             if (dto.RequirementType != null) requirement.RequirementType = ParseRequirementType(dto.RequirementType);
             if (dto.Priority != null) requirement.Priority = ParsePriorityLevel(dto.Priority);
 
@@ -394,9 +420,14 @@ namespace BLL.Services
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project == null) throw new Exception("No project found for this group");
 
+            var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            // BR-026: Jira integration must be configured and synced before creating requirements from Jira
+            if (integration == null || integration.SyncStatus != SyncStatus.success)
+                throw new Exception("Jira integration must be configured and synced first");
+
             var allIssues = await _jiraIssueRepository.GetByProjectIdAsync(project.ProjectId);
             if (!allIssues.Any())
-                throw new Exception("No Jira issues found. Run a Jira sync first.");
+                throw new Exception("No Jira issues found. Run a sync first.");
 
             var existingRequirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
             var alreadyLinkedIssueIds = existingRequirements
@@ -1162,7 +1193,7 @@ namespace BLL.Services
             Title = task.Title,
             Description = task.Description,
             Status = task.Status.ToString(),
-            Priority = ToJiraPriority(task.Priority),
+            Priority = ToJiraPriority(task.Priority) ?? "Medium",
             DueDate = task.DueDate,
             WorkHours = task.WorkHours,
             CompletedAt = task.CompletedAt,

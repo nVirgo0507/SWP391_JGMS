@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+using DAL.Models;
 
 namespace BLL.DTOs.Admin
 {
@@ -15,6 +15,7 @@ namespace BLL.DTOs.Admin
         public int MemberCount { get; set; }
         /// <summary>Full list of current (active) members, ordered by leader first then name.</summary>
         public List<GroupMemberResponseDTO> Members { get; set; } = new();
+        public ProjectResponseDTO? Project { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }

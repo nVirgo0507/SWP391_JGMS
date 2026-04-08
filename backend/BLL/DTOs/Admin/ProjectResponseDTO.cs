@@ -30,6 +30,9 @@ namespace BLL.DTOs.Admin
 
         public string? Status { get; set; }
 
+        public ProjectIntegrationStatusDTO? JiraStatus { get; set; }
+        public ProjectIntegrationStatusDTO? GithubStatus { get; set; }
+
         public DateTime? CreatedAt { get; set; }
 
         public DateTime? UpdatedAt { get; set; }
