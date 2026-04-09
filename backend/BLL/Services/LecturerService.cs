@@ -8,6 +8,9 @@ using QuestPDF.Infrastructure;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
+using Task = System.Threading.Tasks.Task;
 
 namespace BLL.Services
 {
@@ -20,6 +23,10 @@ namespace BLL.Services
         private readonly ITaskRepository _taskRepository;
         private readonly IProjectRepository _projectRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
+        private readonly IJiraIssueRepository _jiraIssueRepository;
+        private readonly IGithubCommitRepository _githubCommitRepository;
         private readonly ICommitStatisticRepository _commitStatisticRepository;
 
         public LecturerService(
@@ -30,6 +37,10 @@ namespace BLL.Services
             ITaskRepository taskRepository,
             IProjectRepository projectRepository,
             ICommitRepository commitRepository,
+            IJiraIntegrationRepository jiraIntegrationRepository,
+            IGithubIntegrationRepository githubIntegrationRepository,
+            IJiraIssueRepository jiraIssueRepository,
+            IGithubCommitRepository githubCommitRepository,
             ICommitStatisticRepository commitStatisticRepository)
         {
             _groupRepository = groupRepository;
@@ -39,6 +50,10 @@ namespace BLL.Services
             _taskRepository = taskRepository;
             _projectRepository = projectRepository;
             _commitRepository = commitRepository;
+            _jiraIntegrationRepository = jiraIntegrationRepository;
+            _githubIntegrationRepository = githubIntegrationRepository;
+            _jiraIssueRepository = jiraIssueRepository;
+            _githubCommitRepository = githubCommitRepository;
             _commitStatisticRepository = commitStatisticRepository;
         }
 
@@ -64,6 +79,17 @@ namespace BLL.Services
             };
         }
 
+        private async Task CheckLecturerAssignmentAsync(int userId, StudentGroup group)
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user != null && user.Role == UserRole.admin) return;
+
+            if (group.LecturerId != userId)
+            {
+                throw new Exception("Access denied. You are not assigned to this group.");
+            }
+        }
+
         public async Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId)
         {
             var group = await _groupRepository.GetByIdAsync(groupId);
@@ -72,25 +98,45 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            if (group.LecturerId != lecturerId)
-            {
-                throw new Exception("Access denied. You are not assigned to this group.");
-            }
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var groupDetails = await _groupRepository.GetGroupWithDetailsAsync(groupId);
-            return groupDetails != null ? MapToGroupResponse(groupDetails) : null;
+            if (groupDetails == null) return null;
+
+            var dto = MapToGroupResponse(groupDetails);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project != null)
+            {
+                dto.Project = await MapToProjectResponseAsync(project);
+            }
+
+            return dto;
         }
 
         public async Task<List<StudentGroupResponseDTO>> GetMyGroupsAsync(int lecturerId)
         {
             var lecturer = await _userRepository.GetByIdAsync(lecturerId);
-            if (lecturer == null || lecturer.Role != UserRole.lecturer)
+            if (lecturer == null || (lecturer.Role != UserRole.lecturer && lecturer.Role != UserRole.admin))
             {
-                throw new Exception("Lecturer not found or invalid user role");
+                throw new Exception("User not found or invalid role for this operation");
             }
 
             var groups = await _groupRepository.GetByLecturerIdAsync(lecturerId);
-            return groups.Select(MapToGroupResponse).ToList();
+            var dtos = new List<StudentGroupResponseDTO>();
+
+            foreach (var group in groups)
+            {
+                var dto = MapToGroupResponse(group);
+                var project = await _projectRepository.GetByGroupIdAsync(group.GroupId);
+                if (project != null)
+                {
+                    dto.Project = await MapToProjectResponseAsync(project);
+                }
+                dtos.Add(dto);
+            }
+
+            return dtos;
         }
 
         public async Task<List<GroupMemberResponseDTO>> GetGroupMembersAsync(int lecturerId, int groupId)
@@ -101,10 +147,7 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            if (group.LecturerId != lecturerId)
-            {
-                throw new Exception("Access denied. You are not assigned to this group.");
-            }
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var members = await _memberRepository.GetByGroupIdAsync(groupId);
             return members.Select(m => new GroupMemberResponseDTO
@@ -126,8 +169,7 @@ namespace BLL.Services
             if (group == null)
                 throw new Exception("Student group not found");
 
-            if (group.LecturerId != lecturerId)
-                throw new Exception("Access denied. You are not assigned to this group.");
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var result = new BulkAddResult();
 
@@ -184,8 +226,7 @@ namespace BLL.Services
             if (group == null)
                 throw new Exception("Student group not found");
 
-            if (group.LecturerId != lecturerId)
-                throw new Exception("Access denied. You are not assigned to this group.");
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             User? student = null;
             if (int.TryParse(studentIdentifier, out var numId))
@@ -213,10 +254,7 @@ namespace BLL.Services
                 throw new Exception("Student group not found");
             }
 
-            if (group.LecturerId != lecturerId)
-            {
-                throw new Exception("Access denied. You are not assigned to this group.");
-            }
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             if (!string.IsNullOrEmpty(dto.GroupName))
                 group.GroupName = dto.GroupName;
@@ -228,7 +266,60 @@ namespace BLL.Services
             await _groupRepository.UpdateAsync(group);
 
             var updatedGroup = await _groupRepository.GetGroupWithDetailsAsync(groupId);
-            return MapToGroupResponse(updatedGroup!);
+            var resDto = MapToGroupResponse(updatedGroup!);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project != null)
+            {
+                resDto.Project = await MapToProjectResponseAsync(project);
+            }
+
+            return resDto;
+        }
+
+        private async Task<ProjectResponseDTO> MapToProjectResponseAsync(Project project)
+        {
+            var dto = new ProjectResponseDTO
+            {
+                ProjectId = project.ProjectId,
+                GroupId = project.GroupId,
+                GroupCode = project.Group?.GroupCode,
+                GroupName = project.Group?.GroupName,
+                ProjectName = project.ProjectName,
+                Description = project.Description,
+                StartDate = project.StartDate,
+                EndDate = project.EndDate,
+                Status = project.Status?.ToString(),
+                CreatedAt = project.CreatedAt,
+                UpdatedAt = project.UpdatedAt
+            };
+
+            // Enhanced with integration status
+            var jira = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            if (jira != null)
+            {
+                dto.JiraStatus = new ProjectIntegrationStatusDTO
+                {
+                    IsConfigured = true,
+                    SyncStatus = jira.SyncStatus.ToString(),
+                    LastSync = jira.LastSync,
+                    TotalItems = await _jiraIssueRepository.GetCountByProjectIdAsync(project.ProjectId)
+                };
+            }
+
+            var github = await _githubIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            if (github != null)
+            {
+                dto.GithubStatus = new ProjectIntegrationStatusDTO
+                {
+                    IsConfigured = true,
+                    SyncStatus = github.SyncStatus.ToString(),
+                    LastSync = github.LastSync,
+                    TotalItems = await _githubCommitRepository.GetCountByProjectIdAsync(project.ProjectId)
+                };
+            }
+
+            return dto;
         }
 
         public async Task<List<RequirementResponseDTO>> GetGroupRequirementsAsync(int lecturerId, int groupId)
@@ -236,8 +327,7 @@ namespace BLL.Services
             var group = await _groupRepository.GetByIdAsync(groupId)
                 ?? throw new Exception("Student group not found");
 
-            if (group.LecturerId != lecturerId)
-                throw new Exception("Access denied. You are not assigned to this group.");
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project == null)
@@ -252,8 +342,7 @@ namespace BLL.Services
             var group = await _groupRepository.GetByIdAsync(groupId)
                 ?? throw new Exception("Student group not found");
 
-            if (group.LecturerId != lecturerId)
-                throw new Exception("Access denied. You are not assigned to this group.");
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project == null)
@@ -268,8 +357,7 @@ namespace BLL.Services
             var group = await _groupRepository.GetByIdAsync(groupId)
                 ?? throw new Exception("Student group not found");
 
-            if (group.LecturerId != lecturerId)
-                throw new Exception("Access denied. You are not assigned to this group.");
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project == null)
@@ -339,8 +427,7 @@ namespace BLL.Services
             var group = await _groupRepository.GetByIdAsync(groupId)
                 ?? throw new Exception("Student group not found");
 
-            if (group.LecturerId != lecturerId)
-                throw new Exception("Access denied. You are not assigned to this group.");
+            await CheckLecturerAssignmentAsync(lecturerId, group);
 
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project == null)
@@ -468,7 +555,7 @@ namespace BLL.Services
                 GroupCode    = group.GroupCode,
                 GroupName    = group.GroupName,
                 LecturerId   = group.LecturerId,
-                LecturerName = group.Lecturer.FullName,
+                LecturerName = group.Lecturer?.FullName ?? "Unknown",
                 LeaderId     = group.LeaderId,
                 LeaderName   = group.Leader?.FullName,
                 ProjectId    = group.Project?.ProjectId,

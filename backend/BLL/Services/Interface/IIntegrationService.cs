@@ -20,6 +20,12 @@ namespace BLL.Services.Interface
         Task<bool> ConfigureProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto);
 
         /// <summary>
+        /// BR-058: Update GitHub integration for a project (Admin only)
+        /// Enforces token encryption
+        /// </summary>
+        Task<bool> UpdateProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto);
+
+        /// <summary>
         /// BR-058: Configure GitHub integration for a user
         /// Only admin users can configure integrations
         /// Validates user role is admin before allowing configuration
@@ -65,6 +71,20 @@ namespace BLL.Services.Interface
         /// Tests connection to GitHub or Jira API
         /// </summary>
         Task<IntegrationTestResultDTO> TestIntegrationAsync(int adminUserId, string integrationType);
+
+
+
+        /// <summary>
+        /// BR-040: Sync GitHub commits for a project.
+        /// Only commits where GITHUB_COMMIT.author_username matches USER.github_username will be linked.
+        /// </summary>
+        Task<CommitSyncResultDTO> SyncGithubCommitsAsync(int adminUserId, int projectId);
+
+        /// <summary>
+        /// BR-041: Import raw GitHub commits into the GITHUB_COMMIT table.
+        /// Enforces unique commit SHA per project.
+        /// </summary>
+        Task<CommitSyncResultDTO> ImportRawGithubCommitsAsync(int adminUserId, int projectId, List<GithubRawCommitDTO> rawCommits);
 
         #endregion
     }

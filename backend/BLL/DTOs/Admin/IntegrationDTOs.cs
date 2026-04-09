@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace BLL.DTOs.Admin
 {
@@ -32,6 +32,17 @@ namespace BLL.DTOs.Admin
         public bool HasJiraIntegration { get; set; }
         public string? JiraAccountId { get; set; }
         public DateTime ConfiguredAt { get; set; }
+    }
+
+    /// <summary>
+    /// DTO for project integration status information
+    /// </summary>
+    public class ProjectIntegrationStatusDTO
+    {
+        public bool IsConfigured { get; set; }
+        public string? SyncStatus { get; set; }
+        public DateTime? LastSync { get; set; }
+        public int TotalItems { get; set; }
     }
 
     /// <summary>

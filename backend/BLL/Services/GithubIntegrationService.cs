@@ -14,24 +14,27 @@ namespace BLL.Services
         private readonly IGithubApiService _githubApiService;
         private readonly IGithubCommitRepository _githubCommitRepository;
         private readonly ICommitRepository _commitRepository;
-        private readonly ICommitStatisticRepository _commitStatisticRepository;
         private readonly IUserRepository _userRepository;
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
+        private readonly IProjectRepository _projectRepository;
 
         public GithubIntegrationService(
             IGithubApiService githubApiService,
             IGithubCommitRepository githubCommitRepository,
             ICommitRepository commitRepository,
-            ICommitStatisticRepository commitStatisticRepository,
             IUserRepository userRepository,
-            IGithubIntegrationRepository githubIntegrationRepository)
+            IGithubIntegrationRepository githubIntegrationRepository,
+            ICommitStatisticRepository commitStatisticRepository,
+            IProjectRepository projectRepository)
         {
             _githubApiService = githubApiService;
             _githubCommitRepository = githubCommitRepository;
-            _commitRepository = commitRepository;
-            _commitStatisticRepository = commitStatisticRepository;
+                _commitRepository = commitRepository;
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
+            _commitStatisticRepository = commitStatisticRepository;
+            _projectRepository = projectRepository;
         }
 
         public async Task<GithubIntegrationResponseDto?> GetIntegrationAsync(int projectId)
@@ -59,13 +62,24 @@ namespace BLL.Services
         public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId, bool forceFullResync = false)
         {
             var startedAt = DateTime.UtcNow;
+            var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+            if (integration == null)
+            {
+                throw new Exception($"GitHub integration not found for project {projectId}");
+            }
+
+            // BR-025: Sync Interval Limits (at least 5 minutes)
+            if (integration.LastSync.HasValue && (DateTime.UtcNow - integration.LastSync.Value).TotalMinutes < 5)
+            {
+                throw new Exception("Please wait at least 5 minutes between manual syncs");
+            }
 
             // Mark as syncing
             await SetSyncStatusAsync(projectId, SyncStatus.syncing);
 
             try
             {
-                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+                integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
                 if (integration == null)
                 {
                     throw new Exception($"GitHub integration not found for project {projectId}");
@@ -76,7 +90,6 @@ namespace BLL.Services
 
                 if (!forceFullResync && effectiveSince.HasValue)
                 {
-                    // Guard against bad/future cursor values, then use overlap to avoid missing delayed pushes.
                     var now = DateTime.UtcNow;
                     if (effectiveSince.Value > now)
                     {
@@ -88,14 +101,11 @@ namespace BLL.Services
 
                 var commits = await _githubApiService.GetCommitsAsync(projectId, effectiveSince);
 
-                // If incremental window returns nothing, do a bounded backfill pass so manually
-                // deleted raw rows can be re-created even without new pushes.
                 if (!forceFullResync && effectiveSince.HasValue && commits.Count == 0)
                 {
                     var backfillSince = DateTime.UtcNow.AddDays(-90);
                     commits = await _githubApiService.GetCommitsAsync(projectId, backfillSince);
                 }
-
                 var fetchedCount = commits.Count;
 
                 // Existing raw commits in DB (used for SHA dedupe and local-commit recovery).
@@ -114,6 +124,7 @@ namespace BLL.Services
 
                 foreach (var dto in uniqueCommits)
                 {
+                    // BR-041: Unique Commit SHA
                     if (existingShas.Contains(dto.Sha))
                     {
                         duplicateSkipped++;
@@ -130,6 +141,17 @@ namespace BLL.Services
 
                     existingShas.Add(dto.Sha);
 
+                    // BR-043: Commit Date Validation
+                    if (dto.Date > DateTime.UtcNow)
+                    {
+                        throw new Exception("Invalid commit date detected");
+                    }
+
+                    // BR-044: Non-Negative Code Changes
+                    if (dto.Additions < 0 || dto.Deletions < 0 || dto.ChangedFiles < 0)
+                    {
+                        continue;
+                    }
                     var githubCommit = new GithubCommit
                     {
                         ProjectId = projectId,
@@ -185,7 +207,8 @@ namespace BLL.Services
                             CommitDate = githubCommit.CommitDate,
                             Additions = githubCommit.Additions,
                             Deletions = githubCommit.Deletions,
-                            ChangedFiles = githubCommit.ChangedFiles
+                            ChangedFiles = githubCommit.ChangedFiles,
+                            CreatedAt = DateTime.UtcNow
                         });
                     }
                     else
@@ -203,6 +226,9 @@ namespace BLL.Services
 
                 // Mark sync as successful
                 await UpdateLastSyncAsync(projectId, SyncStatus.success);
+
+                // Auto-sync statistics after commits are updated
+                await SyncCommitStatisticsAsync(projectId);
 
                 return new GithubSyncSummaryDto
                 {
@@ -222,6 +248,78 @@ namespace BLL.Services
                 // Mark sync as failed, then re-throw
                 await SetSyncStatusAsync(projectId, SyncStatus.failed);
                 throw;
+            }
+        }
+
+        public async System.Threading.Tasks.Task SyncCommitStatisticsAsync(int projectId)
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId);
+            if (project == null) return;
+
+            // Period is Project Start to Project End (or Today if End is future/null)
+            var pStart = project.StartDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+            var pEnd = project.EndDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            if (pEnd < pStart) pEnd = pStart.AddDays(30);
+
+            var totalDays = (pEnd.ToDateTime(TimeOnly.MinValue) - pStart.ToDateTime(TimeOnly.MinValue)).TotalDays;
+            if (totalDays <= 0) totalDays = 1;
+
+            // Get all linked commits for this project
+            var commits = await _commitRepository.GetCommitsByProjectIdAsync(projectId);
+
+            // Group by user
+            var userGroups = commits.GroupBy(c => c.UserId);
+
+            foreach (var group in userGroups)
+            {
+                var userId = group.Key;
+                var totalCommits = group.Count();
+                var totalAdditions = group.Sum(c => c.Additions ?? 0);
+                var totalDeletions = group.Sum(c => c.Deletions ?? 0);
+                var totalChangedFiles = group.Sum(c => c.ChangedFiles ?? 0);
+
+                // BR-051: Commit Frequency Calculation = total_commits / days
+                // Calculate as decimal with 2 decimal places
+                var frequency = Math.Round((decimal)totalCommits / (decimal)totalDays, 2);
+
+                var avgSize = 0;
+                if (totalCommits > 0)
+                {
+                    avgSize = (totalAdditions + totalDeletions) / totalCommits;
+                }
+
+                var existingStat = await _commitStatisticRepository.GetByUserProjectAndPeriodAsync(userId, projectId, pStart, pEnd);
+
+                if (existingStat != null)
+                {
+                    existingStat.TotalCommits = totalCommits;
+                    existingStat.TotalAdditions = totalAdditions;
+                    existingStat.TotalDeletions = totalDeletions;
+                    existingStat.TotalChangedFiles = totalChangedFiles;
+                    existingStat.CommitFrequency = frequency;
+                    existingStat.AvgCommitSize = avgSize;
+                    existingStat.UpdatedAt = DateTime.UtcNow;
+                    await _commitStatisticRepository.UpdateAsync(existingStat);
+                }
+                else
+                {
+                    var stat = new CommitStatistic
+                    {
+                        ProjectId = projectId,
+                        UserId = userId,
+                        PeriodStart = pStart,
+                        PeriodEnd = pEnd,
+                        TotalCommits = totalCommits,
+                        TotalAdditions = totalAdditions,
+                        TotalDeletions = totalDeletions,
+                        TotalChangedFiles = totalChangedFiles,
+                        CommitFrequency = frequency,
+                        AvgCommitSize = avgSize,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    await _commitStatisticRepository.AddAsync(stat);
+                }
             }
         }
 
@@ -252,10 +350,7 @@ namespace BLL.Services
         {
             if (eventType == "push")
             {
-                // In a real scenario, we would parse the payload using System.Text.Json
-                // extract the repository matching our GithubIntegration
-                // and extract the commits array to insert them similarly to SyncCommitsAsync.
-                // For simplicity in this implementation, we will log or handle basic parsing.
+                // Webhook logic...
                 await System.Threading.Tasks.Task.CompletedTask;
             }
         }

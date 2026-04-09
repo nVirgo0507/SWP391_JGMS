@@ -76,15 +76,13 @@ namespace BLL.DTOs.Admin
         public int ProjectId { get; set; }
 
         public int TotalCommits { get; set; }
-
+        public int TotalAdditions { get; set; }
+        public int TotalDeletions { get; set; }
+        public int TotalChangedFiles { get; set; }
         public int CommitsThisWeek { get; set; }
-
         public int CommitsThisMonth { get; set; }
-
         public double? AverageCommitsPerDay { get; set; }
-
         public DateTime? LastCommitDate { get; set; }
-
         public DateTime? UpdatedAt { get; set; }
     }
 }

@@ -13,7 +13,7 @@ namespace SWP391_JGMS.Controllers
     /// Group endpoints accept a group code (e.g. "SE1234") or numeric group ID.
     /// </summary>
     [ApiController]
-    [Authorize(Roles = "lecturer")]
+    [Authorize(Roles = "lecturer,admin")]
     [Route("api/lecturers")]
     [Produces("application/json")]
     public class LecturerController : ControllerBase

@@ -2,7 +2,9 @@ using BLL.DTOs.Admin;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
-using System.Threading.Tasks;
+using System;
+using System.Collections.Generic;
+using Task = System.Threading.Tasks.Task;
 
 namespace BLL.Services
 {
@@ -18,17 +20,20 @@ namespace BLL.Services
         private readonly IGithubIntegrationRepository _githubIntegrationRepository;
         private readonly IGithubApiService _githubApiService;
         private readonly ITokenEncryptionService _tokenEncryption;
+        private readonly IGithubSyncService _githubSyncService;
 
         public IntegrationService(
             IUserRepository userRepository,
             IGithubIntegrationRepository githubIntegrationRepository,
             IGithubApiService githubApiService,
-            ITokenEncryptionService tokenEncryptionService)
+            ITokenEncryptionService tokenEncryptionService,
+            IGithubSyncService githubSyncService)
         {
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
             _githubApiService = githubApiService;
             _tokenEncryption = tokenEncryptionService;
+            _githubSyncService = githubSyncService;
         }
 
         /// <summary>
@@ -61,36 +66,56 @@ namespace BLL.Services
             var encryptedToken = _tokenEncryption.Encrypt(dto.ApiToken);
 
             var existingIntegration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
-
-            if (existingIntegration == null)
+            if (existingIntegration != null)
             {
-                var integration = new GithubIntegration
-                {
-                    ProjectId = projectId,
-                    ApiToken = encryptedToken,
-                    RepoOwner = dto.RepoOwner,
-                    RepoName = dto.RepoName,
-                    RepoUrl = dto.RepoUrl,
-                    LastSync = null,
-                    SyncStatus = SyncStatus.pending,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                await _githubIntegrationRepository.AddAsync(integration);
+                throw new Exception("GitHub integration already configured for this project");
             }
-            else
-            {
-                existingIntegration.ApiToken = encryptedToken;
-                existingIntegration.RepoOwner = dto.RepoOwner;
-                existingIntegration.RepoName = dto.RepoName;
-                existingIntegration.RepoUrl = dto.RepoUrl;
-                // Reconfiguration should restart sync window to avoid stale incremental cursors.
-                existingIntegration.LastSync = null;
-                existingIntegration.SyncStatus = SyncStatus.pending;
-                existingIntegration.UpdatedAt = DateTime.UtcNow;
 
-                await _githubIntegrationRepository.UpdateAsync(existingIntegration);
+            var integration = new GithubIntegration
+            {
+                ProjectId = projectId,
+                ApiToken = encryptedToken,
+                RepoOwner = dto.RepoOwner,
+                RepoName = dto.RepoName,
+                RepoUrl = dto.RepoUrl,
+                SyncStatus = SyncStatus.pending,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _githubIntegrationRepository.AddAsync(integration);
+
+            return true;
+        }
+
+        /// <summary>
+        /// BR-058: Update GitHub integration for a project
+        /// Only admin users can configure integrations
+        /// BR-022: Encrypt API Tokens before update
+        /// </summary>
+        public async Task<bool> UpdateProjectGithubAsync(int adminUserId, int projectId, GitHubIntegrationConfigDTO dto)
+        {
+            // Validating admin privileges
+            await ValidateAdminAccessAsync(adminUserId);
+
+            // Validate the token and repo against the GitHub API before saving
+            await _githubApiService.ValidateConnectionAsync(dto.ApiToken, dto.RepoOwner, dto.RepoName);
+
+            var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+            if (integration == null)
+            {
+                throw new Exception("GitHub integration not found for this project");
             }
+
+            var encryptedToken = _tokenEncryption.Encrypt(dto.ApiToken);
+
+            integration.ApiToken = encryptedToken;
+            integration.RepoOwner = dto.RepoOwner;
+            integration.RepoName = dto.RepoName;
+            integration.RepoUrl = dto.RepoUrl;
+            integration.UpdatedAt = DateTime.UtcNow;
+            integration.SyncStatus = SyncStatus.pending; // Re-set status
+
+            await _githubIntegrationRepository.UpdateAsync(integration);
 
             return true;
         }
@@ -114,8 +139,7 @@ namespace BLL.Services
 
             // Update GitHub integration
             targetUser.GithubUsername = githubUsername;
-            // TODO: Update user in repository
-            // await _userRepository.UpdateAsync(targetUser);
+            await _userRepository.UpdateAsync(targetUser);
 
             // Return updated user response
             return new UserResponseDTO
@@ -148,8 +172,7 @@ namespace BLL.Services
 
             // Remove GitHub integration
             targetUser.GithubUsername = null;
-            // TODO: Update user in repository
-            // await _userRepository.UpdateAsync(targetUser);
+            await _userRepository.UpdateAsync(targetUser);
 
             // Return updated user response
             return new UserResponseDTO
@@ -162,6 +185,28 @@ namespace BLL.Services
                 GithubUsername = targetUser.GithubUsername,
                 JiraAccountId = targetUser.JiraAccountId
             };
+        }
+
+
+
+        /// <summary>
+        /// BR-040: Sync GitHub commits for a project.
+        /// Only links commits where GITHUB_COMMIT.author_username matches USER.github_username.
+        /// </summary>
+        public async Task<CommitSyncResultDTO> SyncGithubCommitsAsync(int adminUserId, int projectId)
+        {
+            await ValidateAdminAccessAsync(adminUserId);
+            return await _githubSyncService.SyncCommitsAsync(projectId);
+        }
+
+        /// <summary>
+        /// BR-041: Import raw GitHub commits into the GITHUB_COMMIT table.
+        /// Enforces unique commit SHA per project.
+        /// </summary>
+        public async Task<CommitSyncResultDTO> ImportRawGithubCommitsAsync(int adminUserId, int projectId, List<DTOs.Admin.GithubRawCommitDTO> rawCommits)
+        {
+            await ValidateAdminAccessAsync(adminUserId);
+            return await _githubSyncService.ImportRawCommitsAsync(projectId, rawCommits);
         }
 
         #endregion
@@ -187,8 +232,7 @@ namespace BLL.Services
 
             // Update Jira integration
             targetUser.JiraAccountId = jiraAccountId;
-            // TODO: Update user in repository
-            // await _userRepository.UpdateAsync(targetUser);
+            await _userRepository.UpdateAsync(targetUser);
 
             // Return updated user response
             return new UserResponseDTO
@@ -221,8 +265,7 @@ namespace BLL.Services
 
             // Remove Jira integration
             targetUser.JiraAccountId = null;
-            // TODO: Update user in repository
-            // await _userRepository.UpdateAsync(targetUser);
+            await _userRepository.UpdateAsync(targetUser);
 
             // Return updated user response
             return new UserResponseDTO
@@ -250,9 +293,22 @@ namespace BLL.Services
             // BR-058: Validate admin user has permission
             await ValidateAdminAccessAsync(adminUserId);
 
-            // TODO: Get all users with configured integrations from repository
-            // Filter users where GithubUsername is not null OR JiraAccountId is not null
-            return new List<IntegrationStatusDTO>();
+            var users = await _userRepository.GetAllAsync();
+            var result = users
+                .Where(u => !string.IsNullOrEmpty(u.GithubUsername) || !string.IsNullOrEmpty(u.JiraAccountId))
+                .Select(u => new IntegrationStatusDTO
+                {
+                    UserId = u.UserId,
+                    UserName = u.FullName,
+                    HasGithubIntegration = !string.IsNullOrEmpty(u.GithubUsername),
+                    GithubUsername = u.GithubUsername,
+                    HasJiraIntegration = !string.IsNullOrEmpty(u.JiraAccountId),
+                    JiraAccountId = u.JiraAccountId,
+                    ConfiguredAt = u.UpdatedAt ?? u.CreatedAt ?? DateTime.UtcNow
+                })
+                .ToList();
+
+            return result;
         }
 
         /// <summary>

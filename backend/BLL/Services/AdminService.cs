@@ -1,10 +1,13 @@
-﻿using BLL.DTOs.Admin;
+using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Identity;
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
+using System.Linq;
+using Task = System.Threading.Tasks.Task;
 
 namespace BLL.Services
 {
@@ -14,18 +17,30 @@ namespace BLL.Services
         private readonly IStudentGroupRepository _groupRepository;
         private readonly IGroupMemberRepository _memberRepository;
         private readonly IProjectRepository _projectRepository;
+        private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
+        private readonly IJiraIssueRepository _jiraIssueRepository;
+        private readonly IGithubCommitRepository _githubCommitRepository;
         private readonly PasswordHasher<User> _passwordHasher;
 
         public AdminService(
             IUserRepository userRepository,
             IStudentGroupRepository groupRepository,
             IGroupMemberRepository memberRepository,
-            IProjectRepository projectRepository)
+            IProjectRepository projectRepository,
+            IJiraIntegrationRepository jiraIntegrationRepository,
+            IGithubIntegrationRepository githubIntegrationRepository,
+            IJiraIssueRepository jiraIssueRepository,
+            IGithubCommitRepository githubCommitRepository)
         {
             _userRepository = userRepository;
             _groupRepository = groupRepository;
             _memberRepository = memberRepository;
             _projectRepository = projectRepository;
+            _jiraIntegrationRepository = jiraIntegrationRepository;
+            _githubIntegrationRepository = githubIntegrationRepository;
+            _jiraIssueRepository = jiraIssueRepository;
+            _githubCommitRepository = githubCommitRepository;
             _passwordHasher = new PasswordHasher<User>();
         }
 
@@ -512,13 +527,39 @@ namespace BLL.Services
         public async Task<StudentGroupResponseDTO?> GetStudentGroupByIdAsync(int groupId)
         {
             var group = await _groupRepository.GetGroupWithDetailsAsync(groupId);
-            return group != null ? MapToGroupResponse(group) : null;
+            if (group == null) return null;
+
+            var dto = MapToGroupResponse(group);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project != null)
+            {
+                dto.Project = await MapToProjectResponseAsync(project);
+            }
+
+            return dto;
         }
 
         public async Task<List<StudentGroupResponseDTO>> GetAllStudentGroupsAsync()
         {
             var groups = await _groupRepository.GetAllAsync();
-            return groups.Select(MapToGroupResponse).ToList();
+            var dtos = new List<StudentGroupResponseDTO>();
+
+            foreach (var group in groups)
+            {
+                var dto = MapToGroupResponse(group);
+
+                // Add project details if exists
+                var project = await _projectRepository.GetByGroupIdAsync(group.GroupId);
+                if (project != null)
+                {
+                    dto.Project = await MapToProjectResponseAsync(project);
+                }
+
+                dtos.Add(dto);
+            }
+
+            return dtos;
         }
 
         public async System.Threading.Tasks.Task DeleteStudentGroupAsync(int groupId)
@@ -707,7 +748,7 @@ namespace BLL.Services
                 GroupCode   = group.GroupCode,
                 GroupName   = group.GroupName,
                 LecturerId  = group.LecturerId,
-                LecturerName = group.Lecturer.FullName,
+                LecturerName = group.Lecturer?.FullName ?? "Unknown",
                 LeaderId    = group.LeaderId,
                 LeaderName  = group.Leader?.FullName,
                 ProjectId   = group.Project?.ProjectId,
@@ -826,9 +867,9 @@ namespace BLL.Services
             await _projectRepository.DeleteAsync(projectId);
         }
 
-        private ProjectResponseDTO MapToProjectResponse(Project project)
+        private async Task<ProjectResponseDTO> MapToProjectResponseAsync(Project project)
         {
-            return new ProjectResponseDTO
+            var dto = new ProjectResponseDTO
             {
                 ProjectId = project.ProjectId,
                 GroupId = project.GroupId,
@@ -842,6 +883,39 @@ namespace BLL.Services
                 CreatedAt = project.CreatedAt,
                 UpdatedAt = project.UpdatedAt
             };
+
+            // Enhanced with integration status (admin group management requirement)
+            var jira = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            if (jira != null)
+            {
+                dto.JiraStatus = new ProjectIntegrationStatusDTO
+                {
+                    IsConfigured = true,
+                    SyncStatus = jira.SyncStatus.ToString(),
+                    LastSync = jira.LastSync,
+                    TotalItems = await _jiraIssueRepository.GetCountByProjectIdAsync(project.ProjectId)
+                };
+            }
+
+            var github = await _githubIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            if (github != null)
+            {
+                dto.GithubStatus = new ProjectIntegrationStatusDTO
+                {
+                    IsConfigured = true,
+                    SyncStatus = github.SyncStatus.ToString(),
+                    LastSync = github.LastSync,
+                    TotalItems = await _githubCommitRepository.GetCountByProjectIdAsync(project.ProjectId)
+                };
+            }
+
+            return dto;
+        }
+
+        private ProjectResponseDTO MapToProjectResponse(Project project)
+        {
+            // Sync wrapper for Async map
+            return MapToProjectResponseAsync(project).GetAwaiter().GetResult();
         }
 
         #endregion

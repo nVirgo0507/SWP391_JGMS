@@ -142,17 +142,6 @@ public class Program
 
 		builder.Services.AddAuthorization();
 
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<DAL.Models.TaskStatus>("task_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<PriorityLevel>("priority_level");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<RequirementType>("requirement_type");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<JiraPriority>("jira_priority");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<DocumentStatus>("document_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<ProjectStatus>("project_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<SyncStatus>("sync_status");
-		NpgsqlConnection.GlobalTypeMapper.MapEnum<ReportType>("report_type");
-
 		// Configure Npgsql to handle DateTime correctly
 		AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
@@ -178,7 +167,6 @@ public class Program
 		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
 		builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
-		builder.Services.AddScoped<ICommitStatisticRepository, CommitStatisticRepository>();
 		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
 		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
 		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
@@ -187,6 +175,7 @@ public class Program
 		builder.Services.AddScoped<IRequirementRepository, RequirementRepository>();
 		builder.Services.AddScoped<IGithubIntegrationRepository, GithubIntegrationRepository>();
 		builder.Services.AddScoped<IGithubCommitRepository, GithubCommitRepository>();
+		builder.Services.AddScoped<ICommitStatisticRepository, CommitStatisticRepository>();
 
 		// Register HttpClient for Jira API
 		builder.Services.AddHttpClient();
@@ -205,12 +194,15 @@ public class Program
 		builder.Services.AddScoped<ITeamMemberService, TeamMemberService>();
 		// BR-058: Admin Integration Configuration service
 		builder.Services.AddScoped<IIntegrationService, IntegrationService>();
+		builder.Services.AddScoped<IGithubSyncService, GithubSyncService>();
 		builder.Services.AddScoped<IStudentService, StudentService>();
+		// GitHub Integration services
+		builder.Services.AddScoped<IGithubApiService, GithubApiService>();
+
 		// Jira Integration services
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
 		// Github Integration services
-		builder.Services.AddScoped<IGithubApiService, GithubApiService>();
 		builder.Services.AddScoped<IGithubIntegrationService, GithubIntegrationService>();
 		// Identifier resolver — converts group codes, emails, etc. to internal IDs
 		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
@@ -222,13 +214,33 @@ public class Program
 		{
 			var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 			var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
-
-			// Resolve the migrations folder relative to the app's content root
 			var migrationsFolder = Path.Combine(app.Environment.ContentRootPath, "migrations");
-			MigrationRunner.Run(connectionString, migrationsFolder, logger);
 
+			try
+			{
+				MigrationRunner.Run(connectionString, migrationsFolder, logger);
+			}
+			catch (Exception ex)
+			{
+				logger.LogError(ex, "Failed to run migrations. If this is a connection issue, check Render IP Access Control.");
+			}
+		}
+
+		// Initialize database and Seed Admin
+		using (var scope = app.Services.CreateScope())
+		{
 			var context = scope.ServiceProvider.GetRequiredService<JgmsContext>();
-			DbInitializer.SeedAdmin(context);
+			var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+			try
+			{
+				context.Database.EnsureCreated();
+				DbInitializer.SeedAdmin(context);
+			}
+			catch (Exception ex)
+			{
+				logger.LogError(ex, "Database seeding failed. Ensure connection to Render Postgres is allowed (IP whitelist or firewall).");
+			}
 		}
 
 		// Swagger — available in all environments for team access

@@ -7,6 +7,7 @@ namespace BLL.Services.Interface
     {
         Task<GithubIntegrationResponseDto?> GetIntegrationAsync(int projectId);
         Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId, bool forceFullResync = false);
+        Task SyncCommitStatisticsAsync(int projectId);
         Task ProcessWebhookEventAsync(string eventType, string payload);
     }
 }

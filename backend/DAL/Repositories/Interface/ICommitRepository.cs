@@ -1,4 +1,5 @@
-﻿using DAL.Models;
+using DAL.Models;
+using Task = System.Threading.Tasks.Task;
 
 namespace DAL.Repositories.Interface
 {
@@ -8,6 +9,7 @@ namespace DAL.Repositories.Interface
         Task<List<Commit>> GetCommitsByUserIdAndProjectIdAsync(int userId, int projectId);
         Task<List<Commit>> GetCommitsByProjectIdAsync(int projectId);
         Task<Commit?> GetByIdAsync(int commitId);
+        Task<bool> ExistsByGithubCommitIdAsync(int githubCommitId);
         System.Threading.Tasks.Task AddAsync(Commit commit);
         System.Threading.Tasks.Task AddRangeAsync(IEnumerable<Commit> commits);
     }

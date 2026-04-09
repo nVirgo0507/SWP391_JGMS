@@ -1,10 +1,13 @@
-﻿using BLL.DTOs.Jira;
+using BLL.DTOs.Jira;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Generic;
+using System.Linq;
+using Task = System.Threading.Tasks.Task;
 
 namespace BLL.Services
 {
@@ -22,7 +25,7 @@ namespace BLL.Services
         private readonly IStudentGroupRepository _groupRepo;
         private readonly IGroupMemberRepository _groupMemberRepo;
         private readonly IJiraApiService _jiraApiService;
-        private readonly byte[] _encryptionKey;
+        private readonly ITokenEncryptionService _tokenEncryption;
 
         public JiraIntegrationService(
             IJiraIntegrationRepository jiraIntegrationRepo,
@@ -33,7 +36,7 @@ namespace BLL.Services
             IStudentGroupRepository groupRepo,
             IGroupMemberRepository groupMemberRepo,
             IJiraApiService jiraApiService,
-            IConfiguration configuration)
+            ITokenEncryptionService tokenEncryption)
         {
             _jiraIntegrationRepo = jiraIntegrationRepo;
             _jiraIssueRepo = jiraIssueRepo;
@@ -43,11 +46,7 @@ namespace BLL.Services
             _groupRepo = groupRepo;
             _groupMemberRepo = groupMemberRepo;
             _jiraApiService = jiraApiService;
-
-            // Derive a stable 256-bit AES key from the JWT secret using SHA-256.
-            // This is stable across restarts (unlike IDataProtector ephemeral keys).
-            var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
-            _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
+            _tokenEncryption = tokenEncryption;
         }
 
         // ============================================================================
@@ -99,42 +98,13 @@ namespace BLL.Services
             return members.Any(m => m.UserId == userId);
         }
 
-        private string EncryptToken(string token)
-        {
-            var plaintext = Encoding.UTF8.GetBytes(token.Trim());
-            var nonce = new byte[AesGcm.NonceByteSizes.MaxSize];   // 12 bytes
-            var tag   = new byte[AesGcm.TagByteSizes.MaxSize];     // 16 bytes
-            var ciphertext = new byte[plaintext.Length];
-
-            RandomNumberGenerator.Fill(nonce);
-
-            using var aes = new AesGcm(_encryptionKey, AesGcm.TagByteSizes.MaxSize);
-            aes.Encrypt(nonce, plaintext, ciphertext, tag);
-
-            // Layout: base64(nonce || tag || ciphertext)
-            var combined = new byte[nonce.Length + tag.Length + ciphertext.Length];
-            nonce.CopyTo(combined, 0);
-            tag.CopyTo(combined, nonce.Length);
-            ciphertext.CopyTo(combined, nonce.Length + tag.Length);
-            return Convert.ToBase64String(combined);
-        }
+        private string EncryptToken(string token) => _tokenEncryption.Encrypt(token);
 
         private string DecryptToken(string encryptedToken)
         {
             try
             {
-                var data = Convert.FromBase64String(encryptedToken);
-                var nonceSize = AesGcm.NonceByteSizes.MaxSize;  // 12
-                var tagSize   = AesGcm.TagByteSizes.MaxSize;     // 16
-
-                var nonce      = data[..nonceSize];
-                var tag        = data[nonceSize..(nonceSize + tagSize)];
-                var ciphertext = data[(nonceSize + tagSize)..];
-                var plaintext  = new byte[ciphertext.Length];
-
-                using var aes = new AesGcm(_encryptionKey, AesGcm.TagByteSizes.MaxSize);
-                aes.Decrypt(nonce, ciphertext, tag, plaintext);
-                return Encoding.UTF8.GetString(plaintext);
+                return _tokenEncryption.Decrypt(encryptedToken);
             }
             catch
             {
@@ -193,11 +163,12 @@ namespace BLL.Services
                 throw new Exception("Project not found");
             }
 
+            // BR-023: Validate Jira Credentials
             // Test connection before saving
             var isConnected = await _jiraApiService.TestConnectionAsync(dto.JiraUrl, dto.JiraEmail, dto.ApiToken);
             if (!isConnected)
             {
-                throw new Exception("Failed to connect to Jira. Please check your credentials and URL.");
+                throw new Exception("Invalid Jira credentials. Please check your API token and email.");
             }
 
             // Verify project exists in Jira
@@ -211,11 +182,11 @@ namespace BLL.Services
                 throw new Exception($"Failed to get Jira project: {ex.Message}");
             }
 
-            // Check if integration already exists
+            // BR-020: One Jira Integration Per Project
             var existingIntegration = await _jiraIntegrationRepo.GetByProjectIdAsync(projectId);
             if (existingIntegration != null)
             {
-                throw new Exception("Jira integration already exists for this project. Use update endpoint instead.");
+                throw new Exception("Jira integration already configured for this project");
             }
 
             // Create new integration
@@ -291,7 +262,7 @@ namespace BLL.Services
             var isConnected = await _jiraApiService.TestConnectionAsync(dto.JiraUrl, dto.JiraEmail, dto.ApiToken);
             if (!isConnected)
             {
-                throw new Exception("Failed to connect to Jira with new credentials");
+                throw new Exception("Invalid Jira credentials. Please check your API token and email.");
             }
 
             // Update integration
@@ -367,7 +338,7 @@ namespace BLL.Services
             }
             else
             {
-                message = "Failed to connect to Jira. Please check your credentials.";
+                message = "Invalid Jira credentials. Please check your API token and email.";
             }
 
             return new JiraConnectionTestDTO
@@ -420,6 +391,13 @@ namespace BLL.Services
             if (integration == null)
             {
                 throw new Exception("Jira integration not configured for this project");
+            }
+
+            // BR-025: Sync Interval Limits (at least 5 minutes)
+            // Error Message: "Please wait at least 5 minutes between manual syncs"
+            if (integration.LastSync.HasValue && (DateTime.UtcNow - integration.LastSync.Value).TotalMinutes < 5)
+            {
+                throw new Exception("Please wait at least 5 minutes between manual syncs");
             }
 
             var result = new JiraSyncResultDTO
@@ -581,7 +559,11 @@ namespace BLL.Services
 
             var issues = await _jiraIssueRepo.GetByProjectIdAsync(projectId);
 
-            // Group members can view all project issues (not only assigned ones).
+            // Fetch all users in this project to map AssigneeNames efficiently
+            var projectUsers = await _userRepo.GetAllAsync(); // Or a more specific project-member lookup
+            var userMap = projectUsers
+                .Where(u => !string.IsNullOrEmpty(u.JiraAccountId))
+                .ToDictionary(u => u.JiraAccountId!, u => u.FullName);
 
             return issues.Select(i => new JiraIssueDTO
             {
@@ -594,6 +576,9 @@ namespace BLL.Services
                 Priority = i.Priority?.ToString(),
                 Status = i.Status,
                 AssigneeJiraId = i.AssigneeJiraId,
+                AssigneeName = !string.IsNullOrEmpty(i.AssigneeJiraId) && userMap.TryGetValue(i.AssigneeJiraId, out var name) 
+                    ? name 
+                    : null,
                 SprintId = i.SprintId,
                 SprintName = i.SprintName,
                 SprintState = i.SprintState,
@@ -624,6 +609,13 @@ namespace BLL.Services
                 throw new UnauthorizedAccessException("You don't have permission to view this issue");
             }
 
+            string? assigneeName = null;
+            if (!string.IsNullOrEmpty(issue.AssigneeJiraId))
+            {
+                var assignee = await _userRepo.GetByJiraAccountIdAsync(issue.AssigneeJiraId);
+                assigneeName = assignee?.FullName;
+            }
+
             return new JiraIssueDTO
             {
                 JiraIssueId = issue.JiraIssueId,
@@ -635,6 +627,7 @@ namespace BLL.Services
                 Priority = issue.Priority?.ToString(),
                 Status = issue.Status,
                 AssigneeJiraId = issue.AssigneeJiraId,
+                AssigneeName = assigneeName,
                 SprintId = issue.SprintId,
                 SprintName = issue.SprintName,
                 SprintState = issue.SprintState,

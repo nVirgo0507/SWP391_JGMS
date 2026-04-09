@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+using DAL.Models;
 
 namespace DAL.Repositories.Interface
 {
@@ -56,6 +56,7 @@ namespace DAL.Repositories.Interface
         /// Get issues by status
         /// </summary>
         System.Threading.Tasks.Task<List<JiraIssue>> GetByStatusAsync(int projectId, string status);
+        System.Threading.Tasks.Task<int> GetCountByProjectIdAsync(int projectId);
     }
 }
 

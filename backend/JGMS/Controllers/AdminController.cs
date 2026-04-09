@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Admin;
+using BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Repositories.Interface;
@@ -595,11 +595,10 @@ namespace SWP391_JGMS.Controllers
                 var existing = await _adminService.GetProjectByGroupIdAsync(groupId);
                 if (existing == null)
                     return NotFound(new { message = $"No project found for group '{groupCode}'" });
-
+                
                 await _adminService.DeleteProjectAsync(existing.ProjectId);
-                return Ok(new { message = "Project deleted successfully" });
+                return Ok();
             }
-            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
@@ -628,6 +627,34 @@ namespace SWP391_JGMS.Controllers
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
+
+        /// <summary>
+        /// Update GitHub integration for a project.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// BR-022: Enforces token encryption
+        /// </summary>
+        [HttpPut("groups/{groupCode}/project/integrations/github")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> UpdateProjectGithub(string groupCode, [FromBody] GitHubIntegrationConfigDTO dto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var project = await _adminService.GetProjectByGroupIdAsync(groupId);
+                if (project == null)
+                    return NotFound(new { message = $"No project found for group '{groupCode}'" });
+
+                await _integrationService.UpdateProjectGithubAsync(GetCurrentUserId(), project.ProjectId, dto);
+                return Ok(new { message = "GitHub integration for project updated successfully" });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
 
         #region Security
 

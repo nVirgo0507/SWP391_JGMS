@@ -1,4 +1,4 @@
-﻿﻿﻿using Microsoft.EntityFrameworkCore;
+﻿﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System;
 using System.Collections.Generic;
@@ -50,21 +50,6 @@ public partial class JgmsContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        if (!optionsBuilder.IsConfigured)
-        {
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("user_role");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<UserStatus>("user_status");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<TaskStatus>("task_status");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<PriorityLevel>("priority_level");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<RequirementType>("requirement_type");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<JiraPriority>("jira_priority");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<DocumentStatus>("document_status");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<ProjectStatus>("project_status");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<SyncStatus>("sync_status");
-			NpgsqlConnection.GlobalTypeMapper.MapEnum<ReportType>("report_type");
-
-			optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=JGMS;Username=admin;Password=123456");
-		}
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

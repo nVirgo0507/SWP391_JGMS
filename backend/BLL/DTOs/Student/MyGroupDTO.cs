@@ -1,4 +1,6 @@
-﻿namespace BLL.DTOs.Student
+using AdminDTOs = BLL.DTOs.Admin;
+
+namespace BLL.DTOs.Student
 {
     /// <summary>
     /// Returns the group a student currently belongs to,
@@ -16,6 +18,8 @@
 
         public int? ProjectId { get; set; }
         public string? ProjectName { get; set; }
+        public AdminDTOs.ProjectIntegrationStatusDTO? JiraStatus { get; set; }
+        public AdminDTOs.ProjectIntegrationStatusDTO? GithubStatus { get; set; }
 
         public List<MyGroupMemberDTO> Members { get; set; } = new();
     }

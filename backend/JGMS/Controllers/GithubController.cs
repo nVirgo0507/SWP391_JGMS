@@ -113,7 +113,7 @@ namespace JGMS.Controllers
 
                 return Ok();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return BadRequest(new { Message = "Error processing webhook." });
             }

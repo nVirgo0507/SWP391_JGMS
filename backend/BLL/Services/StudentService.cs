@@ -1,4 +1,4 @@
-﻿﻿using BLL.DTOs.Student;
+using BLL.DTOs.Student;
 using AdminDTOs = BLL.DTOs.Admin;
 using BLL.Helpers;
 using BLL.Services.Interface;
@@ -17,7 +17,10 @@ namespace BLL.Services
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
         private readonly ISrsDocumentRepository _srsRepository;
         private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraIssueRepository _jiraIssueRepository;
+        private readonly IGithubCommitRepository _githubCommitRepository;
+        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
 
         public StudentService(
             IUserRepository userRepository,
@@ -27,7 +30,10 @@ namespace BLL.Services
             IPersonalTaskStatisticRepository statisticRepository,
             ISrsDocumentRepository srsRepository,
             IGroupMemberRepository groupMemberRepository,
-            IJiraIssueRepository jiraIssueRepository)
+            IJiraIssueRepository jiraIssueRepository,
+            IJiraIntegrationRepository jiraIntegrationRepository,
+            IGithubCommitRepository githubCommitRepository,
+            IGithubIntegrationRepository githubIntegrationRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
@@ -37,6 +43,9 @@ namespace BLL.Services
             _srsRepository = srsRepository;
             _groupMemberRepository = groupMemberRepository;
             _jiraIssueRepository = jiraIssueRepository;
+            _jiraIntegrationRepository = jiraIntegrationRepository;
+            _githubCommitRepository = githubCommitRepository;
+            _githubIntegrationRepository = githubIntegrationRepository;
         }
 
         #region View Assigned Tasks
@@ -226,6 +235,8 @@ namespace BLL.Services
 
         public async Task<PersonalStatisticsDTO> GetPersonalStatisticsAsync(int userId, int? projectId = null)
         {
+            await ValidateGithubIntegrationAsync(userId, projectId);
+
             var statisticsDto = new PersonalStatisticsDTO();
 
             // Get task statistics from live TASK rows to avoid stale/empty snapshot results.
@@ -306,6 +317,8 @@ namespace BLL.Services
 
         public async System.Threading.Tasks.Task<List<CommitHistoryDTO>> GetCommitHistoryAsync(int userId, int? projectId = null)
         {
+            await ValidateGithubIntegrationAsync(userId, projectId);
+
             var commits = projectId.HasValue
                 ? await _commitRepository.GetCommitsByUserIdAndProjectIdAsync(userId, projectId.Value)
                 : await _commitRepository.GetCommitsByUserIdAsync(userId);
@@ -324,6 +337,43 @@ namespace BLL.Services
         }
 
         #endregion
+
+        private async System.Threading.Tasks.Task ValidateGithubIntegrationAsync(int userId, int? projectId)
+        {
+            if (projectId.HasValue)
+            {
+                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId.Value);
+                if (integration == null || integration.SyncStatus != SyncStatus.success)
+                {
+                    throw new Exception("GitHub integration must be configured and synced first");
+                }
+            }
+            else
+            {
+                var memberships = await _groupMemberRepository.GetGroupsByStudentIdAsync(userId);
+                var activeProjects = memberships
+                    .Where(m => m.LeftAt == null && m.Group?.Project?.ProjectId != null)
+                    .Select(m => m.Group!.Project!.ProjectId)
+                    .Distinct()
+                    .ToList();
+
+                bool hasSyncedIntegration = false;
+                foreach (var pid in activeProjects)
+                {
+                    var integration = await _githubIntegrationRepository.GetByProjectIdAsync(pid);
+                    if (integration != null && integration.SyncStatus == SyncStatus.success)
+                    {
+                        hasSyncedIntegration = true;
+                        break;
+                    }
+                }
+
+                if (!hasSyncedIntegration && activeProjects.Any())
+                {
+                    throw new Exception("GitHub integration must be configured and synced first");
+                }
+            }
+        }
 
         #region Profile Management
 
@@ -443,7 +493,7 @@ namespace BLL.Services
 
             var group = activeMembership.Group;
 
-            return new MyGroupDTO
+            var dto = new MyGroupDTO
             {
                 GroupId = group.GroupId,
                 GroupCode = group.GroupCode,
@@ -465,6 +515,37 @@ namespace BLL.Services
                     })
                     .ToList()
             };
+
+            if (group.Project != null)
+            {
+                var pid = group.Project.ProjectId;
+                
+                var jira = await _jiraIntegrationRepository.GetByProjectIdAsync(pid);
+                if (jira != null)
+                {
+                    dto.JiraStatus = new AdminDTOs.ProjectIntegrationStatusDTO
+                    {
+                        IsConfigured = true,
+                        SyncStatus = jira.SyncStatus.ToString(),
+                        LastSync = jira.LastSync,
+                        TotalItems = await _jiraIssueRepository.GetCountByProjectIdAsync(pid)
+                    };
+                }
+
+                var github = await _githubIntegrationRepository.GetByProjectIdAsync(pid);
+                if (github != null)
+                {
+                    dto.GithubStatus = new AdminDTOs.ProjectIntegrationStatusDTO
+                    {
+                        IsConfigured = true,
+                        SyncStatus = github.SyncStatus.ToString(),
+                        LastSync = github.LastSync,
+                        TotalItems = await _githubCommitRepository.GetCountByProjectIdAsync(pid)
+                    };
+                }
+            }
+
+            return dto;
         }
 
         #endregion

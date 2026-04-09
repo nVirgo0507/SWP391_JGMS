@@ -1,4 +1,4 @@
-﻿﻿using DAL.Models;
+﻿using DAL.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,6 +16,7 @@ namespace DAL.Repositories.Interface
 		Task<bool> PhoneExistsAsync(string phone);
 		Task<bool> GithubUsernameExistsAsync(string githubUsername);
 		Task<bool> JiraAccountIdExistsAsync(string jiraAccountId);
+		Task<User?> GetByJiraAccountIdAsync(string jiraAccountId);
 
 		// Admin methods
 		Task<User?> GetByIdAsync(int userId);

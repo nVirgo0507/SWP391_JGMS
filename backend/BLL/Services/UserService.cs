@@ -30,7 +30,7 @@ namespace BLL.Services
 		}
 		public async Task<string?> LoginAsync(LoginDTO dto)
 		{
-			var user = await  _userRepository.GetByEmailAsync(dto.Email);
+			var user = await _userRepository.GetByEmailAsync(dto.Email);
 			if (user == null)
 			{
 				return null;
@@ -50,12 +50,12 @@ namespace BLL.Services
 			var claims = new List<Claim>
 			{
 				new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
-				new Claim(JwtRegisteredClaimNames.Email, user.Email),
+				new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
 				new Claim(ClaimTypes.Role, user.Role.ToString())
 			};
 
 			var key = new SymmetricSecurityKey(
-				Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!)
+				Encoding.UTF8.GetBytes(_configuration["Jwt:Key"] ?? "")
 			);
 
 			var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -64,12 +64,13 @@ namespace BLL.Services
 				issuer: _configuration["Jwt:Issuer"],
 				audience: _configuration["Jwt:Audience"],
 				claims: claims,
-				expires: DateTime.Now.AddMinutes(int.Parse(_configuration["Jwt:ExpireMinutes"])),
+				expires: DateTime.Now.AddMinutes(int.Parse(_configuration["Jwt:ExpireMinutes"] ?? "60")),
 				signingCredentials: creds
 			);
 
 			return new JwtSecurityTokenHandler().WriteToken(token);
 		}
+
 
 		public async System.Threading.Tasks.Task RegisterAsync(RegisterDTO dto)
 		{
