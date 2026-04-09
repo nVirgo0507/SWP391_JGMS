@@ -1,4 +1,4 @@
-﻿using DAL.Data;
+using DAL.Data;
 using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -90,7 +90,10 @@ namespace DAL.Repositories
                 .Where(j => j.ProjectId == projectId && j.Status == status)
                 .ToListAsync();
         }
+
+        public async Task<int> GetCountByProjectIdAsync(int projectId)
+        {
+            return await _context.JiraIssues.CountAsync(j => j.ProjectId == projectId);
+        }
     }
 }
-
-

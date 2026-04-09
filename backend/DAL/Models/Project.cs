@@ -48,5 +48,4 @@ public partial class Project
 
     public virtual ICollection<SrsDocument> SrsDocuments { get; set; } = new List<SrsDocument>();
 
-    public virtual ICollection<TeamCommitSummary> TeamCommitSummaries { get; set; } = new List<TeamCommitSummary>();
 }

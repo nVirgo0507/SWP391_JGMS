@@ -1,6 +1,7 @@
-﻿using DAL.Models;
+using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
+using Task = System.Threading.Tasks.Task;
 
 namespace DAL.Repositories
 {
@@ -51,6 +52,11 @@ namespace DAL.Repositories
                 .Include(c => c.GithubCommit)
                 .Include(c => c.User)
                 .FirstOrDefaultAsync(c => c.CommitId == commitId);
+        }
+
+        public async Task<bool> ExistsByGithubCommitIdAsync(int githubCommitId)
+        {
+            return await _context.Commits.AnyAsync(c => c.GithubCommitId == githubCommitId);
         }
 
         public async System.Threading.Tasks.Task AddAsync(Commit commit)

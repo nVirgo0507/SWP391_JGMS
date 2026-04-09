@@ -13,7 +13,7 @@ namespace SWP391_JGMS.Controllers
     /// Group endpoints accept a group code (e.g. "SE1234") or numeric group ID.
     /// </summary>
     [ApiController]
-    [Authorize(Roles = "lecturer")]
+    [Authorize(Roles = "lecturer,admin")]
     [Route("api/lecturers")]
     [Produces("application/json")]
     public class LecturerController : ControllerBase
@@ -33,6 +33,24 @@ namespace SWP391_JGMS.Controllers
                            ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
             if (int.TryParse(userIdClaim, out var id)) return id;
             throw new UnauthorizedAccessException("Invalid or missing user identity in token.");
+        }
+
+        /// <summary>
+        /// Get current lecturer's profile information.
+        /// </summary>
+        [HttpGet("profile")]
+        [ProducesResponseType(typeof(UserResponseDTO), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyProfile()
+        {
+            try
+            {
+                var profile = await _lecturerService.GetMyProfileAsync(GetCurrentUserId());
+                return Ok(profile);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         /// <summary>
@@ -262,6 +280,40 @@ namespace SWP391_JGMS.Controllers
             {
                 if (ex.Message.Contains("Access denied"))
                     return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Export a progress report for the assigned group's project.
+        /// Supported formats: word, pdf.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports/{reportId}/export")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> ExportProjectProgressReport(string groupCode, int reportId, [FromQuery] string format = "pdf")
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var (content, fileName, contentType) = await _lecturerService.ExportProjectProgressReportAsync(
+                    GetCurrentUserId(),
+                    groupId,
+                    reportId,
+                    format);
+
+                return File(content, contentType, fileName);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied"))
+                    return StatusCode(403, new { message = ex.Message });
+                if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                    return NotFound(new { message = ex.Message });
                 return BadRequest(new { message = ex.Message });
             }
         }

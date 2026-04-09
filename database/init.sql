@@ -245,6 +245,7 @@ CREATE TABLE TASK (
     status task_status DEFAULT 'todo',
     priority priority_level DEFAULT 'medium',
     due_date DATE,
+    work_hours INTEGER DEFAULT 0,
     completed_at TIMESTAMP,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -417,29 +418,6 @@ CREATE INDEX idx_commit_stats_period ON COMMIT_STATISTICS(period_start);
 
 COMMENT ON TABLE COMMIT_STATISTICS IS 'Problem 3: Báo cáo đánh giá tần suất và chất lượng các lần commit | Lecturer: view GitHub commit statistics | Team Member: view personal commit statistics';
 
--- ============================================================================
--- Team Commit Summary
--- ============================================================================
-
-CREATE TABLE TEAM_COMMIT_SUMMARY (
-    summary_id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL REFERENCES PROJECT(project_id),
-    summary_date DATE NOT NULL,
-    total_commits INTEGER DEFAULT 0,
-    total_additions INTEGER DEFAULT 0,
-    total_deletions INTEGER DEFAULT 0,
-    active_contributors INTEGER DEFAULT 0,
-    summary_data JSONB,
-
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT unique_project_date UNIQUE (project_id, summary_date)
-);
-
-CREATE INDEX idx_team_summary_project ON TEAM_COMMIT_SUMMARY(project_id);
-CREATE INDEX idx_team_summary_date ON TEAM_COMMIT_SUMMARY(summary_date);
-
-COMMENT ON TABLE TEAM_COMMIT_SUMMARY IS 'Team Leader: view team commit summaries (aggregated from COMMIT_STATISTICS)';
 
 -- ============================================================================
 -- Personal Task Statistics

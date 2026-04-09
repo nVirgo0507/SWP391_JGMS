@@ -28,8 +28,9 @@ namespace BLL.DTOs.Student
         /// <summary>
         /// Optional work hours spent on the task.
         /// TODO: This will be logged in Jira when integration is implemented.
-        /// Currently not stored in database - reserved for future use.
+        /// Currently stored in task.work_hours as a simple accumulated total.
         /// </summary>
+        [Range(0, int.MaxValue, ErrorMessage = "Work hours must be a non-negative value")]
         public int? WorkHours { get; set; }
     }
 }

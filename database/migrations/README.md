@@ -15,6 +15,10 @@ When you change the database schema, do **two things**:
 
 **You never need to run migrations manually again.** Just add the file and redeploy.
 
+> Important: Migrations must be idempotent (safe to run even if parts already exist).
+> Use `IF EXISTS` / `IF NOT EXISTS` or `DO $$ ... $$` guards, because some environments
+> may already have schema objects from `init.sql` while `schema_migrations` is still empty.
+
 ---
 
 ## Local testing with Docker
@@ -87,6 +91,10 @@ psql "postgresql://admin:PASSWORD@HOST:5432/jgms" -f database/migrations/002_sof
 | 002 | `002_softdelete_group_members.sql` | Add `left_at` to `group_member` for soft-delete audit trail | 2026-03-02 |
 | 003 | `003_srs_overall_description.sql` | Add `overall_description` to `srs_document` | 2026-03-03 |
 | 004 | `004_add_jira_issue_sprint_fields.sql` | Add `sprint_id`, `sprint_name`, `sprint_state` to `jira_issue` | 2026-03-17 |
+| 005 | `005_add_task_work_hours.sql` | Add `task.work_hours` with non-negative check constraint | 2026-03-21 |
+| 006 | `006_team_commit_summary_fk_cascade.sql` | Set `team_commit_summary.project_id` FK to `ON DELETE CASCADE` for deprecation stage 1 | 2026-03-24 |
+| 007 | `007_team_commit_summary_deprecate.sql` | Rename table to `team_commit_summary_deprecated` and create compatibility view `team_commit_summary` | 2026-03-24 |
+| 008 | `008_team_commit_summary_final_cleanup.sql` | Drop compatibility view and deprecated table for final deprecation cleanup | 2026-03-24 |
 
 ---
 

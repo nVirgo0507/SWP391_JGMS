@@ -26,6 +26,8 @@ public partial class Task
 
     public DateOnly? DueDate { get; set; }
 
+    public int? WorkHours { get; set; }
+
     public DateTime? CompletedAt { get; set; }
 
     public DateTime? CreatedAt { get; set; }

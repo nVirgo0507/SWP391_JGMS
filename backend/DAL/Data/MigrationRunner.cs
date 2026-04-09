@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using Npgsql;
+using System.Collections.Generic;
 
 namespace DAL.Data
 {
@@ -10,6 +11,17 @@ namespace DAL.Data
     /// </summary>
     public static class MigrationRunner
     {
+        private static readonly HashSet<string> IdempotentConflictSqlStates = new()
+        {
+            PostgresErrorCodes.DuplicateColumn,      // 42701
+            PostgresErrorCodes.DuplicateTable,       // 42P07
+            PostgresErrorCodes.DuplicateObject,      // 42710
+            PostgresErrorCodes.DuplicateFunction,    // 42723
+            PostgresErrorCodes.DuplicateDatabase,    // 42P04
+            PostgresErrorCodes.DuplicateAlias,       // 42712
+            PostgresErrorCodes.DuplicateFile         // 42710 alias in some providers
+        };
+
         public static void Run(string connectionString, string migrationsFolder, ILogger logger)
         {
             if (!Directory.Exists(migrationsFolder))
@@ -81,6 +93,17 @@ namespace DAL.Data
                     tx.Commit();
                     logger.LogInformation("Migration applied successfully: {File}", filename);
                 }
+                catch (PostgresException pgEx) when (IdempotentConflictSqlStates.Contains(pgEx.SqlState))
+                {
+                    tx.Rollback();
+                    logger.LogWarning(
+                        "Migration hit an idempotent conflict and will be marked as applied: {File}. SQLSTATE={SqlState} Message={Message}",
+                        filename,
+                        pgEx.SqlState,
+                        pgEx.MessageText);
+
+                    MarkMigrationAsApplied(conn, filename);
+                }
                 catch (Exception ex)
                 {
                     tx.Rollback();
@@ -88,6 +111,14 @@ namespace DAL.Data
                     throw;
                 }
             }
+        }
+
+        private static void MarkMigrationAsApplied(NpgsqlConnection conn, string filename)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO schema_migrations (filename) VALUES (@f) ON CONFLICT (filename) DO NOTHING;";
+            cmd.Parameters.AddWithValue("f", filename);
+            cmd.ExecuteNonQuery();
         }
     }
 }

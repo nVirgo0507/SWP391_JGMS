@@ -499,6 +499,79 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Get progress reports for a group project. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports")]
+        [ProducesResponseType(typeof(List<ProgressReportResponseDTO>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetGroupProgressReports(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var reports = await _teamLeaderService.GetGroupProgressReportsAsync(GetCurrentUserId(), groupId);
+                return Ok(reports);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get guided template for creating progress reports. Leader only.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports/template")]
+        [ProducesResponseType(typeof(ProgressReportTemplateDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGroupProgressReportTemplate(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var template = await _teamLeaderService.GetGroupProgressReportTemplateAsync(GetCurrentUserId(), groupId);
+                return Ok(template);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Create a new progress report for a group project. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/progress-reports")]
+        [ProducesResponseType(typeof(ProgressReportResponseDTO), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CreateGroupProgressReport(string groupCode, [FromBody] CreateProgressReportDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var report = await _teamLeaderService.CreateProgressReportAsync(GetCurrentUserId(), groupId, dto);
+                return CreatedAtAction(nameof(GetGroupProgressReports), new { groupCode }, report);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get all requirements for a group project.
         /// Any group member can view; only leaders can create/edit/delete.
         /// Accepts group code (e.g. "SE1234") or numeric group ID.

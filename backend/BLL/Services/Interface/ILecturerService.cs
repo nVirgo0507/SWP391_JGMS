@@ -1,10 +1,13 @@
 using BLL.DTOs.Admin;
+using AdminDTOs = BLL.DTOs.Admin;
 using System.Threading.Tasks;
 
 namespace BLL.Services.Interface
 {
     public interface ILecturerService
     {
+        Task<AdminDTOs.UserResponseDTO> GetMyProfileAsync(int lecturerId);
+
         Task<StudentGroupResponseDTO?> GetGroupByIdAsync(int lecturerId, int groupId);
 
         Task<List<StudentGroupResponseDTO>> GetMyGroupsAsync(int lecturerId);
@@ -24,6 +27,12 @@ namespace BLL.Services.Interface
         Task<List<TaskResponseDTO>> GetGroupTasksAsync(int lecturerId, int groupId);
 
         Task<List<ProgressReportResponseDTO>> GetProjectProgressReportsAsync(int lecturerId, int groupId);
+
+        Task<(byte[] content, string fileName, string contentType)> ExportProjectProgressReportAsync(
+            int lecturerId,
+            int groupId,
+            int reportId,
+            string format);
 
         Task<GroupCommitStatisticsResponseDTO> GetGithubCommitStatisticsAsync(int lecturerId, int groupId);
     }

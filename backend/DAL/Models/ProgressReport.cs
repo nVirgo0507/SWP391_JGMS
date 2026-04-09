@@ -12,6 +12,8 @@ public partial class ProgressReport
 
     public int ProjectId { get; set; }
 
+    public ReportType ReportType { get; set; }
+
     public DateOnly? ReportPeriodStart { get; set; }
 
     public DateOnly? ReportPeriodEnd { get; set; }

@@ -11,5 +11,6 @@ namespace DAL.Repositories.Interface
         Task<bool> CommitExistsAsync(string sha);
         System.Threading.Tasks.Task AddAsync(GithubCommit commit);
         System.Threading.Tasks.Task AddRangeAsync(IEnumerable<GithubCommit> commits);
+        Task<int> GetCountByProjectIdAsync(int projectId);
     }
 }

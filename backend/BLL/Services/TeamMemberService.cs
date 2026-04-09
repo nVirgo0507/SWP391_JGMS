@@ -19,15 +19,30 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
+        private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
+        private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IProjectRepository _projectRepository;
+        private readonly IRequirementRepository _requirementRepository;
 
         public TeamMemberService(
             IUserRepository userRepository,
             ITaskRepository taskRepository,
-            IPersonalTaskStatisticRepository statisticRepository)
+            IPersonalTaskStatisticRepository statisticRepository,
+            ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository,
+            IGroupMemberRepository groupMemberRepository,
+            IProjectRepository projectRepository,
+            IRequirementRepository requirementRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _statisticRepository = statisticRepository;
+            _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
+            _groupMemberRepository = groupMemberRepository;
+            _projectRepository = projectRepository;
+            _requirementRepository = requirementRepository;
         }
 
         /// <summary>
@@ -48,9 +63,11 @@ namespace BLL.Services
         /// </summary>
         private async System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
         {
-            // TODO: Check group_member table for user membership
-            // Verify user is part of the group to allow requirement viewing
-            // throw new Exception("Only team leaders can manage requirements");
+            var isMember = await _groupMemberRepository.IsMemberOfGroupAsync(groupId, userId);
+            if (!isMember)
+            {
+                throw new Exception("Access denied. You are not an active member of this group.");
+            }
         }
 
         #region Requirements Management (Read-Only)
@@ -72,9 +89,14 @@ namespace BLL.Services
             // BR-057: Validate user is member of the group before allowing requirement view
             await ValidateGroupMembershipAsync(userId, groupId);
 
-            // TODO: Get requirements from repository filtered by group_id
-            // Return empty list as placeholder until requirement repository is available
-            return new List<RequirementResponseDTO>();
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+            {
+                return new List<RequirementResponseDTO>();
+            }
+
+            var requirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            return requirements.Select(MapToRequirementResponse).ToList();
         }
 
         #endregion
@@ -153,7 +175,18 @@ namespace BLL.Services
                 task.CompletedAt = DateTime.UtcNow;
             }
 
+            if (dto.WorkHours.HasValue)
+            {
+                task.WorkHours = (task.WorkHours ?? 0) + dto.WorkHours.Value;
+            }
+
             await _taskRepository.UpdateAsync(task);
+
+            var projectId = ResolveProjectIdFromTask(task);
+            if (projectId.HasValue)
+            {
+                await _statisticRepository.RecalculateForUserProjectAsync(userId, projectId.Value);
+            }
 
             return MapToTaskResponse(task);
         }
@@ -198,7 +231,18 @@ namespace BLL.Services
 
             await _taskRepository.UpdateAsync(task);
 
+            var projectId = ResolveProjectIdFromTask(task);
+            if (projectId.HasValue)
+            {
+                await _statisticRepository.RecalculateForUserProjectAsync(userId, projectId.Value);
+            }
+
             return MapToTaskResponse(task);
+        }
+
+        private static int? ResolveProjectIdFromTask(DAL.Models.Task task)
+        {
+            return task.Requirement?.ProjectId ?? task.JiraIssue?.ProjectId;
         }
 
         /// <summary>
@@ -214,9 +258,62 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get personal task statistics from repository
-            // Filter by user_id
-            return null;
+            var tasks = await _taskRepository.GetTasksByUserIdAsync(userId);
+            if (!tasks.Any())
+            {
+                return new PersonalTaskStatisticResponseDTO
+                {
+                    StatisticId = 0,
+                    UserId = userId,
+                    UserName = user.FullName,
+                    ProjectId = 0,
+                    TasksAssigned = 0,
+                    TasksCompleted = 0,
+                    TasksPending = 0,
+                    CompletionPercentage = 0,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+
+            var projectIds = tasks
+                .Select(t => t.Requirement?.ProjectId ?? t.JiraIssue?.ProjectId)
+                .Where(pid => pid.HasValue)
+                .Select(pid => pid!.Value)
+                .ToList();
+
+            var selectedProjectId = projectIds
+                .GroupBy(pid => pid)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+
+            var scopedTasks = selectedProjectId > 0
+                ? tasks.Where(t => (t.Requirement?.ProjectId ?? t.JiraIssue?.ProjectId) == selectedProjectId).ToList()
+                : tasks;
+
+            var assigned = scopedTasks.Count;
+            var completed = scopedTasks.Count(t => t.Status == DAL.Models.TaskStatus.done || t.CompletedAt.HasValue);
+            var pending = Math.Max(0, assigned - completed);
+            var completionPercentage = assigned == 0
+                ? 0
+                : Math.Round((double)completed * 100d / assigned, 2);
+
+            var snapshot = selectedProjectId > 0
+                ? await _statisticRepository.GetByUserIdAndProjectIdAsync(userId, selectedProjectId)
+                : null;
+
+            return new PersonalTaskStatisticResponseDTO
+            {
+                StatisticId = snapshot?.StatId ?? 0,
+                UserId = userId,
+                UserName = user.FullName,
+                ProjectId = selectedProjectId,
+                TasksAssigned = assigned,
+                TasksCompleted = completed,
+                TasksPending = pending,
+                CompletionPercentage = completionPercentage,
+                UpdatedAt = snapshot?.UpdatedAt ?? DateTime.UtcNow
+            };
         }
 
         /// <summary>
@@ -232,9 +329,56 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get personal commit statistics from repository
-            // Filter by user_id
-            return null;
+            var commits = await _commitRepository.GetCommitsByUserIdAsync(userId);
+            var projectIds = commits.Select(c => c.ProjectId).Distinct().ToList();
+            foreach (var pid in projectIds)
+            {
+                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
+            }
+
+            var statsRows = await _commitStatisticRepository.GetLatestByUserIdAsync(userId);
+            var primaryStat = statsRows
+                .OrderByDescending(s => s.TotalCommits ?? 0)
+                .ThenByDescending(s => s.UpdatedAt)
+                .FirstOrDefault();
+
+            var now = DateTime.UtcNow;
+            var weekStart = now.Date.AddDays(-6);
+            var monthStart = new DateTime(now.Year, now.Month, 1);
+
+            var totalCommits = statsRows.Any()
+                ? statsRows.Sum(s => s.TotalCommits ?? 0)
+                : commits.Count;
+            var commitsThisWeek = commits.Count(c => c.CommitDate >= weekStart);
+            var commitsThisMonth = commits.Count(c => c.CommitDate >= monthStart);
+
+            var lastCommitDate = commits.Any() ? commits.Max(c => c.CommitDate) : (DateTime?)null;
+            var firstCommitDate = commits.Any() ? commits.Min(c => c.CommitDate) : (DateTime?)null;
+
+            var activeDays = firstCommitDate.HasValue
+                ? Math.Max(1, (now.Date - firstCommitDate.Value.Date).TotalDays + 1)
+                : 0;
+
+            var avgPerDay = activeDays > 0
+                ? Math.Round(totalCommits / activeDays, 2)
+                : 0;
+
+            var selectedProjectId = primaryStat?.ProjectId
+                ?? commits.GroupBy(c => c.ProjectId).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
+
+            return new CommitStatisticResponseDTO
+            {
+                StatisticId = primaryStat?.StatId ?? 0,
+                UserId = userId,
+                UserName = user.FullName,
+                ProjectId = selectedProjectId,
+                TotalCommits = totalCommits,
+                CommitsThisWeek = commitsThisWeek,
+                CommitsThisMonth = commitsThisMonth,
+                AverageCommitsPerDay = avgPerDay,
+                LastCommitDate = lastCommitDate,
+                UpdatedAt = DateTime.UtcNow
+            };
         }
 
         private TaskResponseDTO MapToTaskResponse(DAL.Models.Task task)
@@ -248,10 +392,33 @@ namespace BLL.Services
                 Title = task.Title,
                 Description = task.Description,
                 DueDate = task.DueDate,
+                WorkHours = task.WorkHours,
                 CompletedAt = task.CompletedAt,
                 CreatedAt = task.CreatedAt,
                 UpdatedAt = task.UpdatedAt,
                 AssignedToName = task.AssignedToNavigation?.FullName
+            };
+        }
+
+        private static RequirementResponseDTO MapToRequirementResponse(Requirement r)
+        {
+            return new RequirementResponseDTO
+            {
+                RequirementId = r.RequirementId,
+                ProjectId = r.ProjectId,
+                JiraIssueId = r.JiraIssueId,
+                JiraIssueKey = r.JiraIssue?.IssueKey,
+                RequirementCode = r.RequirementCode,
+                Title = r.Title,
+                Description = r.Description,
+                RequirementType = r.RequirementType.ToString(),
+                IssueType = r.JiraIssue?.IssueType,
+                Priority = r.Priority.ToString(),
+                JiraStatus = r.JiraIssue?.Status,
+                CreatedBy = r.CreatedBy,
+                CreatedByName = r.CreatedByNavigation?.FullName,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt
             };
         }
 

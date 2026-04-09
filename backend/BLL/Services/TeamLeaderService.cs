@@ -6,6 +6,11 @@ using DAL.Repositories.Interface;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Generic;
+using System.Linq;
+using Task = System.Threading.Tasks.Task;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace BLL.Services
@@ -24,9 +29,11 @@ namespace BLL.Services
         private readonly ITaskRepository _taskRepository;
         private readonly IJiraIssueRepository _jiraIssueRepository;
         private readonly IProjectRepository _projectRepository;
+        private readonly ICommitRepository _commitRepository;
         private readonly IRequirementRepository _requirementRepository;
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
+        private readonly IPersonalTaskStatisticRepository _personalTaskStatisticRepository;
         private readonly byte[] _encryptionKey;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
 
@@ -37,9 +44,11 @@ namespace BLL.Services
             ITaskRepository taskRepository,
             IJiraIssueRepository jiraIssueRepository,
             IProjectRepository projectRepository,
+            ICommitRepository commitRepository,
             IRequirementRepository requirementRepository,
             IJiraIntegrationRepository jiraIntegrationRepository,
             IJiraApiService jiraApiService,
+            IPersonalTaskStatisticRepository personalTaskStatisticRepository,
             IConfiguration configuration,
             ISrsDocumentRepository srsDocumentRepository)
         {
@@ -49,9 +58,11 @@ namespace BLL.Services
             _taskRepository = taskRepository;
             _jiraIssueRepository = jiraIssueRepository;
             _projectRepository = projectRepository;
+            _commitRepository = commitRepository;
             _requirementRepository = requirementRepository;
             _jiraIntegrationRepository = jiraIntegrationRepository;
             _jiraApiService = jiraApiService;
+            _personalTaskStatisticRepository = personalTaskStatisticRepository;
             _srsDocumentRepository = srsDocumentRepository;
             // Derive the same stable AES-GCM key as JiraIntegrationService
             var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
@@ -107,6 +118,203 @@ namespace BLL.Services
             };
         }
 
+        public async Task<List<ProgressReportResponseDTO>> GetGroupProgressReportsAsync(int userId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) return new List<ProgressReportResponseDTO>();
+
+            var reports = await _projectRepository.GetProgressReportsByProjectIdAsync(project.ProjectId);
+            return reports.Select(MapProgressReportToDTO).ToList();
+        }
+
+        public async Task<ProgressReportResponseDTO> CreateProgressReportAsync(int userId, int groupId, CreateProgressReportDTO dto)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            if (dto.ReportPeriodStart.HasValue && dto.ReportPeriodEnd.HasValue && dto.ReportPeriodStart > dto.ReportPeriodEnd)
+                throw new Exception("Report period start must be earlier than or equal to report period end.");
+
+            if (dto.ReportData.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                throw new Exception("reportData is required and must be valid JSON.");
+
+            if (dto.ReportData.ValueKind is not JsonValueKind.Object)
+                throw new Exception("reportData must be a JSON object.");
+
+            var reportDataJson = await BuildReportDataWithTaskProgressAsync(
+                project.ProjectId,
+                dto.ReportData,
+                dto.ReportPeriodStart,
+                dto.ReportPeriodEnd);
+
+            var entity = new ProgressReport
+            {
+                ProjectId = project.ProjectId,
+                ReportType = ParseReportType(dto.ReportType),
+                ReportPeriodStart = dto.ReportPeriodStart,
+                ReportPeriodEnd = dto.ReportPeriodEnd,
+                ReportData = reportDataJson,
+                Summary = dto.Summary,
+                FilePath = dto.FilePath,
+                GeneratedBy = userId,
+                GeneratedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _projectRepository.AddProgressReportAsync(entity);
+
+            var user = await _userRepository.GetByIdAsync(userId);
+            var result = MapProgressReportToDTO(entity);
+            result.GeneratedByName = user?.FullName;
+            return result;
+        }
+
+        public async Task<ProgressReportTemplateDTO> GetGroupProgressReportTemplateAsync(int userId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            return new ProgressReportTemplateDTO
+            {
+                SchemaVersion = "1.0",
+                AllowedReportTypes = new List<string> { "weekly", "sprint", "task_assignment", "task_completion" },
+                Fields = new List<ProgressReportTemplateFieldDTO>
+                {
+                    new() { Key = "title", Label = "Report Title", InputType = "text", Required = true, Placeholder = "Weekly progress report", Description = "Main heading shown in exported Word/PDF" },
+                    new() { Key = "notes", Label = "Notes", InputType = "textarea", Required = false, Placeholder = "Main API endpoints done, testing in progress", Description = "Free text summary for current reporting period" },
+                    new() { Key = "keyHighlights", Label = "Key Highlights", InputType = "string_array", Required = false, Placeholder = "One highlight per line", Description = "Bullet points displayed in exports" },
+                    new() { Key = "autoTaskProgress", Label = "Task Progress", InputType = "object", Required = false, Description = "Auto-filled by backend when creating report" },
+                    new() { Key = "autoCommitStatistics", Label = "GitHub Commit Statistics", InputType = "object", Required = false, Description = "Auto-filled by backend based on report period" }
+                },
+                ReportDataTemplate = new
+                {
+                    schemaVersion = "1.0",
+                    title = $"{project.ProjectName} progress report",
+                    notes = string.Empty,
+                    keyHighlights = new[] { "", "" },
+                    autoTaskProgress = new
+                    {
+                        done = 0,
+                        inProgress = 0,
+                        todo = 0,
+                        total = 0,
+                        completionRate = 0,
+                        basedOn = "assigned_tasks",
+                        generatedAtUtc = DateTime.UtcNow.ToString("O")
+                    },
+                    autoCommitStatistics = new
+                    {
+                        basedOn = "report_period",
+                        commitCount = 0,
+                        contributors = 0,
+                        totalAdditions = 0,
+                        totalDeletions = 0,
+                        totalChangedFiles = 0,
+                        firstCommitAtUtc = (string?)null,
+                        lastCommitAtUtc = (string?)null,
+                        generatedAtUtc = DateTime.UtcNow.ToString("O")
+                    }
+                },
+                AutoGeneratedFields = new List<string>
+                {
+                    "autoTaskProgress.done",
+                    "autoTaskProgress.inProgress",
+                    "autoTaskProgress.todo",
+                    "autoTaskProgress.total",
+                    "autoTaskProgress.completionRate",
+                    "autoTaskProgress.generatedAtUtc",
+                    "autoCommitStatistics.basedOn",
+                    "autoCommitStatistics.commitCount",
+                    "autoCommitStatistics.contributors",
+                    "autoCommitStatistics.totalAdditions",
+                    "autoCommitStatistics.totalDeletions",
+                    "autoCommitStatistics.totalChangedFiles",
+                    "autoCommitStatistics.firstCommitAtUtc",
+                    "autoCommitStatistics.lastCommitAtUtc",
+                    "autoCommitStatistics.generatedAtUtc"
+                }
+            };
+        }
+
+        private async Task<string> BuildReportDataWithTaskProgressAsync(
+            int projectId,
+            JsonElement reportData,
+            DateOnly? reportPeriodStart,
+            DateOnly? reportPeriodEnd)
+        {
+            var root = JsonNode.Parse(reportData.GetRawText()) as JsonObject
+                ?? throw new Exception("reportData must be a valid JSON object.");
+
+            var tasks = await _taskRepository.GetTasksByProjectIdAsync(projectId);
+            var assignedTasks = tasks.Where(t => t.AssignedTo.HasValue).ToList();
+            var source = assignedTasks.Any() ? assignedTasks : tasks;
+
+            var todoCount = source.Count(t => t.Status == DAL.Models.TaskStatus.todo);
+            var inProgressCount = source.Count(t => t.Status == DAL.Models.TaskStatus.in_progress);
+            var doneCount = source.Count(t => t.Status == DAL.Models.TaskStatus.done);
+            var totalCount = source.Count;
+            var completionRate = totalCount == 0
+                ? 0
+                : (int)Math.Round((double)doneCount * 100 / totalCount, MidpointRounding.AwayFromZero);
+
+            root["autoTaskProgress"] = new JsonObject
+            {
+                ["basedOn"] = assignedTasks.Any() ? "assigned_tasks" : "all_project_tasks",
+                ["total"] = totalCount,
+                ["todo"] = todoCount,
+                ["inProgress"] = inProgressCount,
+                ["done"] = doneCount,
+                ["completionRate"] = completionRate,
+                ["generatedAtUtc"] = DateTime.UtcNow
+            };
+
+            var commits = await _commitRepository.GetCommitsByProjectIdAsync(projectId);
+
+            var filteredCommits = commits.Where(c =>
+            {
+                var commitDate = DateOnly.FromDateTime(c.CommitDate);
+                if (reportPeriodStart.HasValue && commitDate < reportPeriodStart.Value)
+                    return false;
+                if (reportPeriodEnd.HasValue && commitDate > reportPeriodEnd.Value)
+                    return false;
+                return true;
+            }).ToList();
+
+            var hasDateFilter = reportPeriodStart.HasValue || reportPeriodEnd.HasValue;
+
+            root["autoCommitStatistics"] = new JsonObject
+            {
+                ["basedOn"] = hasDateFilter ? "report_period" : "all_project_commits",
+                ["periodStart"] = reportPeriodStart?.ToString("yyyy-MM-dd"),
+                ["periodEnd"] = reportPeriodEnd?.ToString("yyyy-MM-dd"),
+                ["commitCount"] = filteredCommits.Count,
+                ["contributors"] = filteredCommits.Select(c => c.UserId).Distinct().Count(),
+                ["totalAdditions"] = filteredCommits.Sum(c => c.Additions ?? 0),
+                ["totalDeletions"] = filteredCommits.Sum(c => c.Deletions ?? 0),
+                ["totalChangedFiles"] = filteredCommits.Sum(c => c.ChangedFiles ?? 0),
+                ["firstCommitAtUtc"] = filteredCommits.Any() ? filteredCommits.Min(c => c.CommitDate).ToString("O") : null,
+                ["lastCommitAtUtc"] = filteredCommits.Any() ? filteredCommits.Max(c => c.CommitDate).ToString("O") : null,
+                ["generatedAtUtc"] = DateTime.UtcNow
+            };
+
+            return root.ToJsonString();
+        }
+
         /// <summary>
         /// BR-055: Get all requirements for the leader's group project
         /// Validates that user is leader of the group
@@ -156,8 +364,23 @@ namespace BLL.Services
                     throw new Exception($"Jira issue with id {jiraIssueId} not found. Sync issues first.");
                 if (existingIssue.ProjectId != project.ProjectId)
                     throw new Exception("The specified Jira issue does not belong to this group's project.");
+
+                // BR-026: Jira integration must be configured and synced first
+                var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+                if (integration == null || integration.SyncStatus != SyncStatus.success)
+                {
+                    throw new Exception("Jira integration must be configured and synced first");
+                }
+
                 jiraIssueKey = existingIssue.IssueKey;
                 jiraStatus = existingIssue.Status;
+
+                // BR-030: One Jira Issue Per Requirement
+                var linkedReq = await _requirementRepository.GetByJiraIssueIdAsync(jiraIssueId.Value);
+                if (linkedReq != null)
+                {
+                    throw new Exception("This Jira issue is already mapped to another requirement");
+                }
             }
             else
             {
@@ -242,7 +465,16 @@ namespace BLL.Services
 
             if (dto.Title != null) requirement.Title = dto.Title;
             if (dto.Description != null) requirement.Description = dto.Description;
-            if (dto.JiraIssueId.HasValue) requirement.JiraIssueId = dto.JiraIssueId;
+            if (dto.JiraIssueId.HasValue)
+            {
+                // BR-030: One Jira Issue Per Requirement
+                var linkedReq = await _requirementRepository.GetByJiraIssueIdAsync(dto.JiraIssueId.Value);
+                if (linkedReq != null && linkedReq.RequirementId != requirementId)
+                {
+                    throw new Exception("This Jira issue is already mapped to another requirement");
+                }
+                requirement.JiraIssueId = dto.JiraIssueId;
+            }
             if (dto.RequirementType != null) requirement.RequirementType = ParseRequirementType(dto.RequirementType);
             if (dto.Priority != null) requirement.Priority = ParsePriorityLevel(dto.Priority);
 
@@ -391,9 +623,14 @@ namespace BLL.Services
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project == null) throw new Exception("No project found for this group");
 
+            var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            // BR-026: Jira integration must be configured and synced before creating requirements from Jira
+            if (integration == null || integration.SyncStatus != SyncStatus.success)
+                throw new Exception("Jira integration must be configured and synced first");
+
             var allIssues = await _jiraIssueRepository.GetByProjectIdAsync(project.ProjectId);
             if (!allIssues.Any())
-                throw new Exception("No Jira issues found. Run a Jira sync first.");
+                throw new Exception("No Jira issues found. Run a sync first.");
 
             var existingRequirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
             var alreadyLinkedIssueIds = existingRequirements
@@ -542,6 +779,11 @@ namespace BLL.Services
 
             await _taskRepository.AddAsync(task);
 
+            if (task.AssignedTo.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(task.AssignedTo.Value, project.ProjectId);
+            }
+
             // Sync to Jira if the task is linked to a Jira issue
             if (task.JiraIssueId.HasValue)
             {
@@ -649,6 +891,11 @@ namespace BLL.Services
 
             await _taskRepository.AddAsync(task);
 
+            if (task.AssignedTo.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(task.AssignedTo.Value, project.ProjectId);
+            }
+
             // Sync changes back to Jira
             var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
             if (integration != null)
@@ -709,6 +956,7 @@ namespace BLL.Services
 
             var task = await _taskRepository.GetByIdAsync(taskId);
             if (task == null) throw new Exception("Task not found");
+            var previousAssignee = task.AssignedTo;
 
             // Validate new assignee is a group member
             if (dto.AssignedTo.HasValue && !await _memberRepository.IsMemberOfGroupAsync(groupId, dto.AssignedTo.Value))
@@ -736,6 +984,15 @@ namespace BLL.Services
                 task.CompletedAt = DateTime.UtcNow;
 
             await _taskRepository.UpdateAsync(task);
+
+            if (previousAssignee.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(previousAssignee.Value, project.ProjectId);
+            }
+            if (task.AssignedTo.HasValue && task.AssignedTo != previousAssignee)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(task.AssignedTo.Value, project.ProjectId);
+            }
 
             // Sync changes back to Jira
             if (task.JiraIssueId.HasValue)
@@ -806,11 +1063,22 @@ namespace BLL.Services
             if (!await _memberRepository.IsMemberOfGroupAsync(groupId, memberId))
                 throw new Exception("Member is not part of this group");
 
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
             var task = await _taskRepository.GetByIdAsync(taskId);
             if (task == null) throw new Exception("Task not found");
 
+            var previousAssignee = task.AssignedTo;
+
             task.AssignedTo = memberId;
             await _taskRepository.UpdateAsync(task);
+
+            if (previousAssignee.HasValue)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(previousAssignee.Value, project.ProjectId);
+            }
+            await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(memberId, project.ProjectId);
         }
 
         public async System.Threading.Tasks.Task DeleteTaskAsync(int userId, int groupId, int taskId)
@@ -1128,8 +1396,9 @@ namespace BLL.Services
             Title = task.Title,
             Description = task.Description,
             Status = task.Status.ToString(),
-            Priority = ToJiraPriority(task.Priority),
+            Priority = ToJiraPriority(task.Priority) ?? "Medium",
             DueDate = task.DueDate,
+            WorkHours = task.WorkHours,
             CompletedAt = task.CompletedAt,
             SprintId = task.JiraIssue?.SprintId,
             SprintName = task.JiraIssue?.SprintName,
@@ -2020,6 +2289,33 @@ th { background-color: #2c3e50; color: white; }
 
             // Default — functional (the majority of Stories/Tasks/Epics)
             return RequirementType.functional;
+        }
+
+        private static ReportType ParseReportType(string value)
+        {
+            if (Enum.TryParse<ReportType>(value?.Trim(), true, out var parsed))
+                return parsed;
+
+            throw new Exception("Invalid reportType. Allowed values: task_assignment, task_completion, weekly, sprint.");
+        }
+
+        private static ProgressReportResponseDTO MapProgressReportToDTO(ProgressReport report)
+        {
+            return new ProgressReportResponseDTO
+            {
+                ReportId = report.ReportId,
+                ProjectId = report.ProjectId,
+                ReportType = report.ReportType.ToString(),
+                ReportPeriodStart = report.ReportPeriodStart,
+                ReportPeriodEnd = report.ReportPeriodEnd,
+                ReportData = report.ReportData,
+                Summary = report.Summary,
+                FilePath = report.FilePath,
+                GeneratedBy = report.GeneratedBy,
+                GeneratedByName = report.GeneratedByNavigation?.FullName,
+                GeneratedAt = report.GeneratedAt,
+                CreatedAt = report.CreatedAt
+            };
         }
     }
 }

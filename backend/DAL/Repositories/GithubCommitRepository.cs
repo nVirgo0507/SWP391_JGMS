@@ -47,5 +47,10 @@ namespace DAL.Repositories
             await _context.GithubCommits.AddRangeAsync(commits);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<int> GetCountByProjectIdAsync(int projectId)
+        {
+            return await _context.GithubCommits.CountAsync(c => c.ProjectId == projectId);
+        }
     }
 }

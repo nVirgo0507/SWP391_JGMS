@@ -1,4 +1,4 @@
-﻿﻿﻿using DAL.Models;
+﻿﻿using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -42,6 +42,11 @@ namespace DAL.Repositories
 		public async Task<bool> JiraAccountIdExistsAsync(string jiraAccountId)
 		{
 			return await _context.Users.AnyAsync(x => x.JiraAccountId == jiraAccountId);
+		}
+
+		public async Task<User?> GetByJiraAccountIdAsync(string jiraAccountId)
+		{
+			return await _context.Users.FirstOrDefaultAsync(x => x.JiraAccountId == jiraAccountId);
 		}
 
 		public async Task<User?> GetByEmailAsync(string email)
