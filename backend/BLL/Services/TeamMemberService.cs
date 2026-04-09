@@ -19,24 +19,30 @@ namespace BLL.Services
         private readonly IUserRepository _userRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly IPersonalTaskStatisticRepository _statisticRepository;
-        private readonly IGroupMemberRepository _groupMemberRepository;
-        private readonly IGithubIntegrationRepository _githubIntegrationRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
+        private readonly IGroupMemberRepository _groupMemberRepository;
+        private readonly IProjectRepository _projectRepository;
+        private readonly IRequirementRepository _requirementRepository;
 
         public TeamMemberService(
             IUserRepository userRepository,
             ITaskRepository taskRepository,
             IPersonalTaskStatisticRepository statisticRepository,
+            ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository,
             IGroupMemberRepository groupMemberRepository,
-            IGithubIntegrationRepository githubIntegrationRepository,
-            ICommitRepository commitRepository)
+            IProjectRepository projectRepository,
+            IRequirementRepository requirementRepository)
         {
             _userRepository = userRepository;
             _taskRepository = taskRepository;
             _statisticRepository = statisticRepository;
-            _groupMemberRepository = groupMemberRepository;
-            _githubIntegrationRepository = githubIntegrationRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
+            _groupMemberRepository = groupMemberRepository;
+            _projectRepository = projectRepository;
+            _requirementRepository = requirementRepository;
         }
 
         /// <summary>
@@ -55,10 +61,13 @@ namespace BLL.Services
         /// BR-057: Validates that user is member of the group
         /// Throws exception if user is not part of the group
         /// </summary>
-        private System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
+        private async System.Threading.Tasks.Task ValidateGroupMembershipAsync(int userId, int groupId)
         {
-            // TODO: Check group_member table for user membership
-            return System.Threading.Tasks.Task.CompletedTask;
+            var isMember = await _groupMemberRepository.IsMemberOfGroupAsync(groupId, userId);
+            if (!isMember)
+            {
+                throw new Exception("Access denied. You are not an active member of this group.");
+            }
         }
 
         #region Requirements Management (Read-Only)
@@ -80,9 +89,14 @@ namespace BLL.Services
             // BR-057: Validate user is member of the group before allowing requirement view
             await ValidateGroupMembershipAsync(userId, groupId);
 
-            // TODO: Get requirements from repository filtered by group_id
-            // Return empty list as placeholder until requirement repository is available
-            return new List<RequirementResponseDTO>();
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+            {
+                return new List<RequirementResponseDTO>();
+            }
+
+            var requirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            return requirements.Select(MapToRequirementResponse).ToList();
         }
 
         #endregion
@@ -244,9 +258,62 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            // TODO: Get personal task statistics from repository
-            // Filter by user_id
-            return null;
+            var tasks = await _taskRepository.GetTasksByUserIdAsync(userId);
+            if (!tasks.Any())
+            {
+                return new PersonalTaskStatisticResponseDTO
+                {
+                    StatisticId = 0,
+                    UserId = userId,
+                    UserName = user.FullName,
+                    ProjectId = 0,
+                    TasksAssigned = 0,
+                    TasksCompleted = 0,
+                    TasksPending = 0,
+                    CompletionPercentage = 0,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+
+            var projectIds = tasks
+                .Select(t => t.Requirement?.ProjectId ?? t.JiraIssue?.ProjectId)
+                .Where(pid => pid.HasValue)
+                .Select(pid => pid!.Value)
+                .ToList();
+
+            var selectedProjectId = projectIds
+                .GroupBy(pid => pid)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+
+            var scopedTasks = selectedProjectId > 0
+                ? tasks.Where(t => (t.Requirement?.ProjectId ?? t.JiraIssue?.ProjectId) == selectedProjectId).ToList()
+                : tasks;
+
+            var assigned = scopedTasks.Count;
+            var completed = scopedTasks.Count(t => t.Status == DAL.Models.TaskStatus.done || t.CompletedAt.HasValue);
+            var pending = Math.Max(0, assigned - completed);
+            var completionPercentage = assigned == 0
+                ? 0
+                : Math.Round((double)completed * 100d / assigned, 2);
+
+            var snapshot = selectedProjectId > 0
+                ? await _statisticRepository.GetByUserIdAndProjectIdAsync(userId, selectedProjectId)
+                : null;
+
+            return new PersonalTaskStatisticResponseDTO
+            {
+                StatisticId = snapshot?.StatId ?? 0,
+                UserId = userId,
+                UserName = user.FullName,
+                ProjectId = selectedProjectId,
+                TasksAssigned = assigned,
+                TasksCompleted = completed,
+                TasksPending = pending,
+                CompletionPercentage = completionPercentage,
+                UpdatedAt = snapshot?.UpdatedAt ?? DateTime.UtcNow
+            };
         }
 
         /// <summary>
@@ -262,57 +329,55 @@ namespace BLL.Services
                 throw new Exception("User not found or is not a student");
             }
 
-            var memberships = await _groupMemberRepository.GetGroupsByStudentIdAsync(userId);
-            var activeMembership = memberships.FirstOrDefault(m => m.LeftAt == null);
-            var activeProject = activeMembership?.Group?.Project?.ProjectId;
-
-            /* Tạm thời bypass kiểm tra integration để bạn dễ test
-            if (activeProject.HasValue)
-            {
-                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(activeProject.Value);
-                if (integration == null || integration.SyncStatus != SyncStatus.success)
-                {
-                    throw new Exception("GitHub integration must be configured and synced first");
-                }
-            }
-            else
-            {
-                throw new Exception("GitHub integration must be configured and synced first");
-            }
-            */
-
-            // Lấy toàn bộ commit của user
             var commits = await _commitRepository.GetCommitsByUserIdAsync(userId);
-
-            if (!commits.Any())
+            var projectIds = commits.Select(c => c.ProjectId).Distinct().ToList();
+            foreach (var pid in projectIds)
             {
-                return new CommitStatisticResponseDTO
-                {
-                    UserId = userId,
-                    UserName = user.FullName,
-                    ProjectId = activeProject ?? 0,
-                    UpdatedAt = DateTime.Now
-                };
+                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(pid);
             }
 
-            var now = DateTime.Now;
-            var startOfWeek = now.Date.AddDays(-(int)now.DayOfWeek);
-            var startOfMonth = new DateTime(now.Year, now.Month, 1);
+            var statsRows = await _commitStatisticRepository.GetLatestByUserIdAsync(userId);
+            var primaryStat = statsRows
+                .OrderByDescending(s => s.TotalCommits ?? 0)
+                .ThenByDescending(s => s.UpdatedAt)
+                .FirstOrDefault();
+
+            var now = DateTime.UtcNow;
+            var weekStart = now.Date.AddDays(-6);
+            var monthStart = new DateTime(now.Year, now.Month, 1);
+
+            var totalCommits = statsRows.Any()
+                ? statsRows.Sum(s => s.TotalCommits ?? 0)
+                : commits.Count;
+            var commitsThisWeek = commits.Count(c => c.CommitDate >= weekStart);
+            var commitsThisMonth = commits.Count(c => c.CommitDate >= monthStart);
+
+            var lastCommitDate = commits.Any() ? commits.Max(c => c.CommitDate) : (DateTime?)null;
+            var firstCommitDate = commits.Any() ? commits.Min(c => c.CommitDate) : (DateTime?)null;
+
+            var activeDays = firstCommitDate.HasValue
+                ? Math.Max(1, (now.Date - firstCommitDate.Value.Date).TotalDays + 1)
+                : 0;
+
+            var avgPerDay = activeDays > 0
+                ? Math.Round(totalCommits / activeDays, 2)
+                : 0;
+
+            var selectedProjectId = primaryStat?.ProjectId
+                ?? commits.GroupBy(c => c.ProjectId).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
 
             return new CommitStatisticResponseDTO
             {
+                StatisticId = primaryStat?.StatId ?? 0,
                 UserId = userId,
                 UserName = user.FullName,
-                ProjectId = activeProject ?? 0,
-                TotalCommits = commits.Count,
-                CommitsThisWeek = commits.Count(c => c.CommitDate >= startOfWeek),
-                CommitsThisMonth = commits.Count(c => c.CommitDate >= startOfMonth),
-                AverageCommitsPerDay = Math.Round((double)commits.Count / 30, 2), // Tạm tính theo tháng
-                LastCommitDate = commits.Max(c => c.CommitDate),
-                TotalAdditions = commits.Sum(c => c.Additions ?? 0),
-                TotalDeletions = commits.Sum(c => c.Deletions ?? 0),
-                TotalChangedFiles = commits.Sum(c => c.ChangedFiles ?? 0),
-                UpdatedAt = DateTime.Now
+                ProjectId = selectedProjectId,
+                TotalCommits = totalCommits,
+                CommitsThisWeek = commitsThisWeek,
+                CommitsThisMonth = commitsThisMonth,
+                AverageCommitsPerDay = avgPerDay,
+                LastCommitDate = lastCommitDate,
+                UpdatedAt = DateTime.UtcNow
             };
         }
 
@@ -332,6 +397,28 @@ namespace BLL.Services
                 CreatedAt = task.CreatedAt,
                 UpdatedAt = task.UpdatedAt,
                 AssignedToName = task.AssignedToNavigation?.FullName
+            };
+        }
+
+        private static RequirementResponseDTO MapToRequirementResponse(Requirement r)
+        {
+            return new RequirementResponseDTO
+            {
+                RequirementId = r.RequirementId,
+                ProjectId = r.ProjectId,
+                JiraIssueId = r.JiraIssueId,
+                JiraIssueKey = r.JiraIssue?.IssueKey,
+                RequirementCode = r.RequirementCode,
+                Title = r.Title,
+                Description = r.Description,
+                RequirementType = r.RequirementType.ToString(),
+                IssueType = r.JiraIssue?.IssueType,
+                Priority = r.Priority.ToString(),
+                JiraStatus = r.JiraIssue?.Status,
+                CreatedBy = r.CreatedBy,
+                CreatedByName = r.CreatedByNavigation?.FullName,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt
             };
         }
 

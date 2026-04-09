@@ -30,14 +30,36 @@ namespace BLL.Services
         {
             _githubApiService = githubApiService;
             _githubCommitRepository = githubCommitRepository;
-            _commitRepository = commitRepository;
+                _commitRepository = commitRepository;
             _userRepository = userRepository;
             _githubIntegrationRepository = githubIntegrationRepository;
             _commitStatisticRepository = commitStatisticRepository;
             _projectRepository = projectRepository;
         }
 
-        public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId)
+        public async Task<GithubIntegrationResponseDto?> GetIntegrationAsync(int projectId)
+        {
+            var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+            if (integration == null)
+            {
+                return null;
+            }
+
+            return new GithubIntegrationResponseDto
+            {
+                IntegrationId = integration.IntegrationId,
+                ProjectId = integration.ProjectId,
+                RepoUrl = integration.RepoUrl,
+                RepoOwner = integration.RepoOwner,
+                RepoName = integration.RepoName,
+                HasTokenConfigured = !string.IsNullOrWhiteSpace(integration.ApiToken),
+                SyncStatus = integration.SyncStatus.ToString(),
+                LastSync = integration.LastSync,
+                UpdatedAt = integration.UpdatedAt
+            };
+        }
+
+        public async Task<GithubSyncSummaryDto> SyncCommitsAsync(int projectId, bool forceFullResync = false)
         {
             var startedAt = DateTime.UtcNow;
             var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
@@ -58,8 +80,32 @@ namespace BLL.Services
             try
             {
                 integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
-                var since = integration?.LastSync;
-                var commits = await _githubApiService.GetCommitsAsync(projectId, since);
+                if (integration == null)
+                {
+                    throw new Exception($"GitHub integration not found for project {projectId}");
+                }
+
+                var since = forceFullResync ? null : integration.LastSync;
+                DateTime? effectiveSince = since;
+
+                if (!forceFullResync && effectiveSince.HasValue)
+                {
+                    var now = DateTime.UtcNow;
+                    if (effectiveSince.Value > now)
+                    {
+                        effectiveSince = now.AddHours(-1);
+                    }
+
+                    effectiveSince = effectiveSince.Value.AddHours(-24);
+                }
+
+                var commits = await _githubApiService.GetCommitsAsync(projectId, effectiveSince);
+
+                if (!forceFullResync && effectiveSince.HasValue && commits.Count == 0)
+                {
+                    var backfillSince = DateTime.UtcNow.AddDays(-90);
+                    commits = await _githubApiService.GetCommitsAsync(projectId, backfillSince);
+                }
                 var fetchedCount = commits.Count;
 
                 // Existing raw commits in DB (used for SHA dedupe and local-commit recovery).
@@ -72,17 +118,24 @@ namespace BLL.Services
                 var duplicateSkipped = 0;
 
                 // Merge note: keep the dedupe set and tuple list declared above.
-                
+
                 // Group by SHA to get distinct commits (in case the API returns duplicates)
                 var uniqueCommits = commits.GroupBy(c => c.Sha).Select(g => g.First()).ToList();
-                var dtosBySha = uniqueCommits.ToDictionary(c => c.Sha, c => c);
 
                 foreach (var dto in uniqueCommits)
                 {
                     // BR-041: Unique Commit SHA
-                    if (existingShas.Contains(dto.Sha) || await _githubCommitRepository.CommitExistsAsync(dto.Sha))
+                    if (existingShas.Contains(dto.Sha))
                     {
                         duplicateSkipped++;
+                        continue;
+                    }
+
+                    // commit_sha is globally unique in DB; skip if another project already inserted it.
+                    if (await _githubCommitRepository.CommitExistsAsync(dto.Sha))
+                    {
+                        duplicateSkipped++;
+                        existingShas.Add(dto.Sha);
                         continue;
                     }
 
@@ -169,6 +222,8 @@ namespace BLL.Services
                     await _commitRepository.AddRangeAsync(newBaseCommits);
                 }
 
+                await _commitStatisticRepository.RecalculateProjectStatisticsAsync(projectId);
+
                 // Mark sync as successful
                 await UpdateLastSyncAsync(projectId, SyncStatus.success);
 
@@ -178,8 +233,8 @@ namespace BLL.Services
                 return new GithubSyncSummaryDto
                 {
                     ProjectId = projectId,
-                    IncrementalSync = since.HasValue,
-                    Since = since,
+                    IncrementalSync = !forceFullResync && since.HasValue,
+                    Since = effectiveSince,
                     GithubFetched = fetchedCount,
                     DuplicateShaSkipped = duplicateSkipped,
                     NewRawGithubCommits = newGithubCommits.Count,

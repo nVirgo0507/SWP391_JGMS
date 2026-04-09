@@ -1,4 +1,4 @@
-using BLL.DTOs;
+﻿using BLL.DTOs;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
@@ -104,6 +104,8 @@ namespace BLL.Services
 				FullName = dto.FullName,
 				Phone = normalizedPhone, // Use normalized phone
 				StudentCode = dto.StudentCode,
+				GithubUsername = dto.GithubUsername,
+				JiraAccountId = dto.JiraAccountId,
 				Role = UserRole.student,
 				Status = UserStatus.active,
 				CreatedAt = DateTime.Now,

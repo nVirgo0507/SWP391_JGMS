@@ -40,6 +40,14 @@ namespace DAL.Repositories
                 .ToListAsync();
         }
 
+        public async System.Threading.Tasks.Task AddProgressReportAsync(ProgressReport progressReport)
+        {
+            progressReport.CreatedAt ??= DateTime.UtcNow;
+            progressReport.GeneratedAt = progressReport.GeneratedAt == default ? DateTime.UtcNow : progressReport.GeneratedAt;
+            await _context.ProgressReports.AddAsync(progressReport);
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<List<CommitStatistic>> GetCommitStatisticsByProjectIdAsync(int projectId)
         {
             return await _context.CommitStatistics
@@ -114,8 +122,6 @@ namespace DAL.Repositories
             if (await _context.PersonalTaskStatistics.AnyAsync(p => p.ProjectId == projectId))
                 return (false, "Project has associated personal task statistics and cannot be deleted.");
 
-            if (await _context.TeamCommitSummaries.AnyAsync(t => t.ProjectId == projectId))
-                return (false, "Project has associated team commit summaries and cannot be deleted.");
 
             return (true, null);
         }

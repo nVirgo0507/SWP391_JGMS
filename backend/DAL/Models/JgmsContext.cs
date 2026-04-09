@@ -46,8 +46,6 @@ public partial class JgmsContext : DbContext
 
     public virtual DbSet<Task> Tasks { get; set; }
 
-    public virtual DbSet<TeamCommitSummary> TeamCommitSummaries { get; set; }
-
     public virtual DbSet<User> Users { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -507,6 +505,9 @@ public partial class JgmsContext : DbContext
                 .HasColumnName("generated_at");
             entity.Property(e => e.GeneratedBy).HasColumnName("generated_by");
             entity.Property(e => e.ProjectId).HasColumnName("project_id");
+            entity.Property(e => e.ReportType)
+                .HasColumnName("report_type")
+                .HasColumnType("report_type");
             entity.Property(e => e.ReportData)
                 .HasColumnType("jsonb")
                 .HasColumnName("report_data");
@@ -805,46 +806,6 @@ public partial class JgmsContext : DbContext
                 .HasConstraintName("task_requirement_id_fkey");
         });
 
-        modelBuilder.Entity<TeamCommitSummary>(entity =>
-        {
-            entity.HasKey(e => e.SummaryId).HasName("team_commit_summary_pkey");
-
-            entity.ToTable("team_commit_summary", tb => tb.HasComment("Team Leader: view team commit summaries (aggregated from COMMIT_STATISTICS)"));
-
-            entity.HasIndex(e => e.SummaryDate, "idx_team_summary_date");
-
-            entity.HasIndex(e => e.ProjectId, "idx_team_summary_project");
-
-            entity.HasIndex(e => new { e.ProjectId, e.SummaryDate }, "unique_project_date").IsUnique();
-
-            entity.Property(e => e.SummaryId).HasColumnName("summary_id");
-            entity.Property(e => e.ActiveContributors)
-                .HasDefaultValue(0)
-                .HasColumnName("active_contributors");
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasColumnType("timestamp without time zone")
-                .HasColumnName("created_at");
-            entity.Property(e => e.ProjectId).HasColumnName("project_id");
-            entity.Property(e => e.SummaryData)
-                .HasColumnType("jsonb")
-                .HasColumnName("summary_data");
-            entity.Property(e => e.SummaryDate).HasColumnName("summary_date");
-            entity.Property(e => e.TotalAdditions)
-                .HasDefaultValue(0)
-                .HasColumnName("total_additions");
-            entity.Property(e => e.TotalCommits)
-                .HasDefaultValue(0)
-                .HasColumnName("total_commits");
-            entity.Property(e => e.TotalDeletions)
-                .HasDefaultValue(0)
-                .HasColumnName("total_deletions");
-
-            entity.HasOne(d => d.Project).WithMany(p => p.TeamCommitSummaries)
-                .HasForeignKey(d => d.ProjectId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("team_commit_summary_project_id_fkey");
-        });
 
         modelBuilder.Entity<User>(entity =>
         {

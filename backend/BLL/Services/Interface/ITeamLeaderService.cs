@@ -20,6 +20,21 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<ProjectResponseDTO?> GetGroupProjectAsync(int userId, int groupId);
 
+        /// <summary>
+        /// Get progress reports for the leader's group project.
+        /// </summary>
+        Task<List<ProgressReportResponseDTO>> GetGroupProgressReportsAsync(int userId, int groupId);
+
+        /// <summary>
+        /// Create a new progress report for the leader's group project.
+        /// </summary>
+        Task<ProgressReportResponseDTO> CreateProgressReportAsync(int userId, int groupId, CreateProgressReportDTO dto);
+
+        /// <summary>
+        /// Get guided template for creating progress reports in frontend forms.
+        /// </summary>
+        Task<ProgressReportTemplateDTO> GetGroupProgressReportTemplateAsync(int userId, int groupId);
+
         #endregion
 
         #region Requirements Management

@@ -4,14 +4,14 @@
 -- after having left (historical rows are kept for audit trail).
 -- A new partial unique index ensures only one ACTIVE membership per student per group.
 
--- 1. Add the left_at column
-ALTER TABLE GROUP_MEMBER ADD COLUMN left_at TIMESTAMP DEFAULT NULL;
+-- 1. Add the left_at column (safe on rerun)
+ALTER TABLE GROUP_MEMBER ADD COLUMN IF NOT EXISTS left_at TIMESTAMP DEFAULT NULL;
 
--- 2. Drop the old unique constraint
-ALTER TABLE GROUP_MEMBER DROP CONSTRAINT unique_group_member;
+-- 2. Drop the old unique constraint if it still exists
+ALTER TABLE GROUP_MEMBER DROP CONSTRAINT IF EXISTS unique_group_member;
 
 -- 3. Add a partial unique index: only one active (left_at IS NULL) membership per student per group
-CREATE UNIQUE INDEX unique_active_group_member
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_group_member
     ON GROUP_MEMBER (group_id, user_id)
     WHERE left_at IS NULL;
 

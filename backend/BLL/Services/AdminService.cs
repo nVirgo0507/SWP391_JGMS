@@ -528,15 +528,15 @@ namespace BLL.Services
         {
             var group = await _groupRepository.GetGroupWithDetailsAsync(groupId);
             if (group == null) return null;
-            
+
             var dto = MapToGroupResponse(group);
-            
+
             var project = await _projectRepository.GetByGroupIdAsync(groupId);
             if (project != null)
             {
                 dto.Project = await MapToProjectResponseAsync(project);
             }
-            
+
             return dto;
         }
 
@@ -544,21 +544,21 @@ namespace BLL.Services
         {
             var groups = await _groupRepository.GetAllAsync();
             var dtos = new List<StudentGroupResponseDTO>();
-            
+
             foreach (var group in groups)
             {
                 var dto = MapToGroupResponse(group);
-                
+
                 // Add project details if exists
                 var project = await _projectRepository.GetByGroupIdAsync(group.GroupId);
                 if (project != null)
                 {
                     dto.Project = await MapToProjectResponseAsync(project);
                 }
-                
+
                 dtos.Add(dto);
             }
-            
+
             return dtos;
         }
 
@@ -751,6 +751,8 @@ namespace BLL.Services
                 LecturerName = group.Lecturer?.FullName ?? "Unknown",
                 LeaderId    = group.LeaderId,
                 LeaderName  = group.Leader?.FullName,
+                ProjectId   = group.Project?.ProjectId,
+                ProjectName = group.Project?.ProjectName,
                 Status      = group.Status,
                 MemberCount = activeMembers.Count,
                 Members     = activeMembers,

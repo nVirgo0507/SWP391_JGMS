@@ -20,6 +20,17 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
+		// Respect ASPNETCORE_URLS when provided (e.g., Docker CMD); otherwise fall back to PORT.
+		var aspnetcoreUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+		if (string.IsNullOrWhiteSpace(aspnetcoreUrls))
+		{
+			var port = Environment.GetEnvironmentVariable("PORT");
+			if (!string.IsNullOrWhiteSpace(port) && int.TryParse(port, out var parsedPort))
+			{
+				builder.WebHost.UseUrls($"http://0.0.0.0:{parsedPort}");
+			}
+		}
+
         // Add services to the container.
 
         // CORS — allow frontend apps to call the API
@@ -156,8 +167,6 @@ public class Program
 		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
 		builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
-		builder.Services.AddScoped<IGithubCommitRepository, GithubCommitRepository>();
-		builder.Services.AddScoped<IGithubIntegrationRepository, GithubIntegrationRepository>();
 		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
 		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
 		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
@@ -194,7 +203,6 @@ public class Program
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
 		// Github Integration services
-		builder.Services.AddScoped<IGithubApiService, GithubApiService>();
 		builder.Services.AddScoped<IGithubIntegrationService, GithubIntegrationService>();
 		// Identifier resolver — converts group codes, emails, etc. to internal IDs
 		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
@@ -207,8 +215,8 @@ public class Program
 			var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 			var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 			var migrationsFolder = Path.Combine(app.Environment.ContentRootPath, "migrations");
-			
-			try 
+
+			try
 			{
 				MigrationRunner.Run(connectionString, migrationsFolder, logger);
 			}
@@ -223,8 +231,8 @@ public class Program
 		{
 			var context = scope.ServiceProvider.GetRequiredService<JgmsContext>();
 			var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-			
-			try 
+
+			try
 			{
 				context.Database.EnsureCreated();
 				DbInitializer.SeedAdmin(context);
@@ -251,7 +259,6 @@ public class Program
 		app.UseAuthentication();
 		app.UseAuthorization();
         app.MapControllers();
-
 
 
         app.Run();
