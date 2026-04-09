@@ -10,7 +10,6 @@ namespace DAL.Repositories.Interface
         Task<List<Commit>> GetCommitsByProjectIdAsync(int projectId);
         Task<Commit?> GetByIdAsync(int commitId);
         Task<bool> ExistsByGithubCommitIdAsync(int githubCommitId);
-        Task<List<Commit>> GetCommitsByProjectIdAsync(int projectId);
         System.Threading.Tasks.Task AddAsync(Commit commit);
         System.Threading.Tasks.Task AddRangeAsync(IEnumerable<Commit> commits);
     }

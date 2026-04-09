@@ -59,16 +59,6 @@ namespace DAL.Repositories
             return await _context.Commits.AnyAsync(c => c.GithubCommitId == githubCommitId);
         }
 
-        public async Task<List<Commit>> GetCommitsByProjectIdAsync(int projectId)
-        {
-            return await _context.Commits
-                .Include(c => c.Project)
-                .Include(c => c.GithubCommit)
-                .Where(c => c.ProjectId == projectId)
-                .OrderByDescending(c => c.CommitDate)
-                .ToListAsync();
-        }
-
         public async System.Threading.Tasks.Task AddAsync(Commit commit)
         {
             await _context.Commits.AddAsync(commit);

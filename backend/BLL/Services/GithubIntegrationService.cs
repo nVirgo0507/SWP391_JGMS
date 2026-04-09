@@ -57,7 +57,7 @@ namespace BLL.Services
 
             try
             {
-                var integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
+                integration = await _githubIntegrationRepository.GetByProjectIdAsync(projectId);
                 var since = integration?.LastSync;
                 var commits = await _githubApiService.GetCommitsAsync(projectId, since);
                 var fetchedCount = commits.Count;
