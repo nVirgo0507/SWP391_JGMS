@@ -1,5 +1,6 @@
 using BLL.DTOs.Admin;
 using AdminDTOs = BLL.DTOs.Admin;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -408,14 +409,14 @@ namespace BLL.Services
 
             if (normalizedFormat is "word" or "doc" or "docx")
             {
-                var wordHtml = GenerateProgressReportWordHtml(group, project, report);
+                var wordHtml = ProgressReportExportHelper.GenerateProgressReportWordHtml(group, project, report);
                 return (Encoding.UTF8.GetBytes(wordHtml), $"{baseFileName}.doc", "application/msword");
             }
 
             if (normalizedFormat == "pdf")
             {
                 QuestPDF.Settings.License = LicenseType.Community;
-                var pdfBytes = GenerateProgressReportPdf(group, project, report);
+                var pdfBytes = ProgressReportExportHelper.GenerateProgressReportPdf(group, project, report);
                 return (pdfBytes, $"{baseFileName}.pdf", "application/pdf");
             }
 
@@ -441,6 +442,10 @@ namespace BLL.Services
 
             await _commitStatisticRepository.RecalculateProjectStatisticsAsync(project.ProjectId);
             var statsRows = await _commitStatisticRepository.GetLatestByProjectIdAsync(project.ProjectId);
+            var commits = await _commitRepository.GetCommitsByProjectIdAsync(project.ProjectId);
+            var lastCommitByUser = commits
+                .GroupBy(c => c.UserId)
+                .ToDictionary(g => g.Key, g => g.Max(x => x.CommitDate));
             if (statsRows.Any())
             {
                 var latestByUser = statsRows;
@@ -468,13 +473,14 @@ namespace BLL.Services
                             TotalChangedFiles = s.TotalChangedFiles ?? 0,
                             CommitFrequency = s.CommitFrequency,
                             AvgCommitSize = s.AvgCommitSize,
-                            LastCommitDate = null
+                            LastCommitDate = lastCommitByUser.TryGetValue(s.UserId, out var lastCommit)
+                                ? lastCommit
+                                : (DateTime?)null
                         })
                         .ToList()
                 };
             }
 
-            var commits = await _commitRepository.GetCommitsByProjectIdAsync(project.ProjectId);
             if (!commits.Any())
             {
                 return new GroupCommitStatisticsResponseDTO
@@ -617,7 +623,7 @@ namespace BLL.Services
         private static byte[] GenerateProgressReportPdf(StudentGroup group, Project project, ProgressReport report)
         {
             var parsed = ParseReportData(report.ReportData);
-            var prettyReportData = PrettyPrintJson(report.ReportData);
+            var snapshot = BuildWeeklySnapshot(parsed.AutoTaskProgress);
 
             return Document.Create(container =>
             {
@@ -642,6 +648,22 @@ namespace BLL.Services
                         column.Spacing(8);
 
                         column.Item().Text($"Generated At: {report.GeneratedAt:yyyy-MM-dd HH:mm:ss} UTC").FontSize(10);
+
+                        if (snapshot.Any())
+                        {
+                            column.Item().Text("Weekly Snapshot").Bold().FontSize(12);
+                            column.Item().Row(row =>
+                            {
+                                foreach (var metric in snapshot)
+                                {
+                                    row.RelativeItem().Border(1).Padding(6).Column(card =>
+                                    {
+                                        card.Item().Text(metric.Key).FontSize(9).SemiBold();
+                                        card.Item().Text(metric.Value).FontSize(12).Bold();
+                                    });
+                                }
+                            });
+                        }
 
                         if (report.ReportPeriodStart.HasValue || report.ReportPeriodEnd.HasValue)
                         {
@@ -704,13 +726,6 @@ namespace BLL.Services
                             }
                         }
 
-                        column.Item().Text("Raw Report Data (Appendix)").Bold().FontSize(12);
-                        column.Item()
-                            .Border(1)
-                            .Padding(8)
-                            .Text(prettyReportData)
-                            .FontSize(9)
-                            .FontFamily("Courier New");
                     });
 
                     page.Footer().AlignRight().Text(x =>
@@ -727,7 +742,7 @@ namespace BLL.Services
         private static string GenerateProgressReportWordHtml(StudentGroup group, Project project, ProgressReport report)
         {
             var parsed = ParseReportData(report.ReportData);
-            var prettyReportData = PrettyPrintJson(report.ReportData);
+            var snapshot = BuildWeeklySnapshot(parsed.AutoTaskProgress);
             var start = report.ReportPeriodStart?.ToString("yyyy-MM-dd") ?? "N/A";
             var end = report.ReportPeriodEnd?.ToString("yyyy-MM-dd") ?? "N/A";
 
@@ -744,7 +759,10 @@ namespace BLL.Services
             sb.AppendLine("th, td { border: 1px solid #d0d7de; padding: 6px; text-align: left; vertical-align: top; }");
             sb.AppendLine("th { background: #f3f4f6; width: 30%; }");
             sb.AppendLine("ul { margin: 6px 0 0 20px; }");
-            sb.AppendLine("pre { background: #f6f8fa; border: 1px solid #d0d7de; padding: 10px; white-space: pre-wrap; }");
+            sb.AppendLine(".cards { width: 100%; border-collapse: separate; border-spacing: 8px; margin-top: 8px; }");
+            sb.AppendLine(".card { border: 1px solid #d0d7de; padding: 8px; border-radius: 6px; }");
+            sb.AppendLine(".card-label { color: #4b5563; font-size: 10pt; }");
+            sb.AppendLine(".card-value { font-size: 14pt; font-weight: 700; }");
             sb.AppendLine("</style></head><body>");
             sb.AppendLine("<h1>Project Progress Report</h1>");
             if (!string.IsNullOrWhiteSpace(parsed.Title))
@@ -755,6 +773,20 @@ namespace BLL.Services
             sb.AppendLine($"<div class='meta'><strong>Type:</strong> {report.ReportType}</div>");
             sb.AppendLine($"<div class='meta'><strong>Period:</strong> {start} to {end}</div>");
             sb.AppendLine($"<div class='meta'><strong>Generated At:</strong> {report.GeneratedAt:yyyy-MM-dd HH:mm:ss} UTC</div>");
+
+            if (snapshot.Any())
+            {
+                sb.AppendLine("<h2>Weekly Snapshot</h2>");
+                sb.AppendLine("<table class='cards'><tr>");
+                foreach (var metric in snapshot)
+                {
+                    sb.AppendLine("<td class='card'>");
+                    sb.AppendLine($"<div class='card-label'>{Escape(metric.Key)}</div>");
+                    sb.AppendLine($"<div class='card-value'>{Escape(metric.Value)}</div>");
+                    sb.AppendLine("</td>");
+                }
+                sb.AppendLine("</tr></table>");
+            }
 
             if (!string.IsNullOrWhiteSpace(report.Summary))
             {
@@ -831,27 +863,31 @@ namespace BLL.Services
                 }
             }
 
-            sb.AppendLine("<h2>Raw Report Data (Appendix)</h2>");
-            sb.AppendLine($"<pre>{Escape(prettyReportData)}</pre>");
             sb.AppendLine("</body></html>");
 
             return sb.ToString();
         }
 
-        private static string PrettyPrintJson(string reportData)
+        private static List<ReportRow> BuildWeeklySnapshot(List<ReportRow> autoTaskProgress)
         {
-            if (string.IsNullOrWhiteSpace(reportData))
-                return "{}";
+            if (!autoTaskProgress.Any())
+                return new List<ReportRow>();
 
-            try
+            return new List<ReportRow>
             {
-                using var doc = JsonDocument.Parse(reportData);
-                return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-            }
-            catch
-            {
-                return reportData;
-            }
+                new("Done", FindMetric(autoTaskProgress, "done")),
+                new("In Progress", FindMetric(autoTaskProgress, "inprogress")),
+                new("Todo", FindMetric(autoTaskProgress, "todo")),
+                new("Completion", FindMetric(autoTaskProgress, "completionrate"))
+            };
+        }
+
+        private static string FindMetric(List<ReportRow> metrics, string normalizedName)
+        {
+            static string Normalize(string value) => new string(value.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+
+            var match = metrics.FirstOrDefault(m => Normalize(m.Key) == normalizedName);
+            return string.IsNullOrWhiteSpace(match?.Value) ? "N/A" : match.Value;
         }
 
         private static ParsedReportData ParseReportData(string reportData)

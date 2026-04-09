@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Admin;
+using BLL.DTOs.Admin;
 using BLL.DTOs.Jira;
 using BLL.Helpers;
 using BLL.Services.Interface;
@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
 using System.Security.Claims;
+using System.Text;
 using StudentDTOs = BLL.DTOs.Student;
 
 namespace SWP391_JGMS.Controllers
@@ -561,6 +562,95 @@ namespace SWP391_JGMS.Controllers
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
                 var report = await _teamLeaderService.CreateProgressReportAsync(GetCurrentUserId(), groupId, dto);
                 return CreatedAtAction(nameof(GetGroupProgressReports), new { groupCode }, report);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Export a progress report for a group project. Leader only.
+        /// Supported formats: word, pdf.
+        /// Accepts group code (e.g. "SE1234") or numeric group ID.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports/{reportId}/export")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> ExportGroupProgressReport(string groupCode, int reportId, [FromQuery] string format = "pdf")
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var (content, fileName, contentType) = await _teamLeaderService.ExportGroupProgressReportAsync(
+                    GetCurrentUserId(),
+                    groupId,
+                    reportId,
+                    format);
+
+                return File(content, contentType, fileName);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)) return NotFound(new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Preview a progress report using the same layout as lecturer export.
+        /// Leader only.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/progress-reports/{reportId}/preview")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> PreviewGroupProgressReport(string groupCode, int reportId)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var (content, _, _) = await _teamLeaderService.ExportGroupProgressReportAsync(
+                    GetCurrentUserId(),
+                    groupId,
+                    reportId,
+                    "word");
+
+                var html = Encoding.UTF8.GetString(content);
+                return Content(html, "text/html; charset=utf-8");
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("Access denied")) return StatusCode(403, new { message = ex.Message });
+                if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)) return NotFound(new { message = ex.Message });
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get GitHub commit statistics for the leader's group.
+        /// Leader only.
+        /// </summary>
+        [HttpGet("groups/{groupCode}/commit-statistics")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGroupCommitStatistics(string groupCode, [FromQuery] DateOnly? startDate, [FromQuery] DateOnly? endDate)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var stats = await _teamLeaderService.GetGroupCommitStatisticsAsync(GetCurrentUserId(), groupId, startDate, endDate);
+                return Ok(stats);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }

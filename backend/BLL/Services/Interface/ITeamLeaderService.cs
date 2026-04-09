@@ -35,6 +35,18 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<ProgressReportTemplateDTO> GetGroupProgressReportTemplateAsync(int userId, int groupId);
 
+        /// <summary>
+        /// Export a progress report for the leader's group project.
+        /// Supported formats: word, pdf.
+        /// </summary>
+        Task<(byte[] content, string fileName, string contentType)> ExportGroupProgressReportAsync(int userId, int groupId, int reportId, string format);
+
+        /// <summary>
+        /// Get commit statistics for all members of the leader's group.
+        /// Leader only — validates leader membership.
+        /// </summary>
+        Task<GroupCommitStatisticsResponseDTO> GetGroupCommitStatisticsAsync(int userId, int groupId, DateOnly? startDate = null, DateOnly? endDate = null);
+
         #endregion
 
         #region Requirements Management

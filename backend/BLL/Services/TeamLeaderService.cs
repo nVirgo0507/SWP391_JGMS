@@ -1,5 +1,6 @@
 using BLL.DTOs.Admin;
 using BLL.DTOs.Jira;
+using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
@@ -30,6 +31,7 @@ namespace BLL.Services
         private readonly IJiraIssueRepository _jiraIssueRepository;
         private readonly IProjectRepository _projectRepository;
         private readonly ICommitRepository _commitRepository;
+        private readonly ICommitStatisticRepository _commitStatisticRepository;
         private readonly IRequirementRepository _requirementRepository;
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
@@ -45,6 +47,7 @@ namespace BLL.Services
             IJiraIssueRepository jiraIssueRepository,
             IProjectRepository projectRepository,
             ICommitRepository commitRepository,
+            ICommitStatisticRepository commitStatisticRepository,
             IRequirementRepository requirementRepository,
             IJiraIntegrationRepository jiraIntegrationRepository,
             IJiraApiService jiraApiService,
@@ -59,6 +62,7 @@ namespace BLL.Services
             _jiraIssueRepository = jiraIssueRepository;
             _projectRepository = projectRepository;
             _commitRepository = commitRepository;
+            _commitStatisticRepository = commitStatisticRepository;
             _requirementRepository = requirementRepository;
             _jiraIntegrationRepository = jiraIntegrationRepository;
             _jiraApiService = jiraApiService;
@@ -248,6 +252,132 @@ namespace BLL.Services
                     "autoCommitStatistics.lastCommitAtUtc",
                     "autoCommitStatistics.generatedAtUtc"
                 }
+            };
+        }
+
+        public async Task<(byte[] content, string fileName, string contentType)> ExportGroupProgressReportAsync(
+            int userId,
+            int groupId,
+            int reportId,
+            string format)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId)
+                ?? throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId)
+                ?? throw new Exception("Project not found for this group.");
+
+            var report = (await _projectRepository.GetProgressReportsByProjectIdAsync(project.ProjectId))
+                .FirstOrDefault(r => r.ReportId == reportId);
+
+            if (report == null)
+                throw new Exception("Progress report not found");
+
+            var normalizedFormat = (format ?? string.Empty).Trim().ToLowerInvariant();
+            var safeGroupCode = SanitizeFileToken(group.GroupCode ?? $"group_{groupId}");
+            var baseFileName = $"progress_report_{safeGroupCode}_{report.ReportId}_{report.GeneratedAt:yyyyMMdd_HHmmss}";
+
+            if (normalizedFormat is "word" or "doc" or "docx")
+            {
+                var wordHtml = ProgressReportExportHelper.GenerateProgressReportWordHtml(group, project, report);
+                return (Encoding.UTF8.GetBytes(wordHtml), $"{baseFileName}.doc", "application/msword");
+            }
+
+            if (normalizedFormat == "pdf")
+            {
+                QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+                var pdfBytes = ProgressReportExportHelper.GenerateProgressReportPdf(group, project, report);
+                return (pdfBytes, $"{baseFileName}.pdf", "application/pdf");
+            }
+
+            throw new Exception("Invalid format. Supported formats: word, pdf");
+        }
+
+        public async Task<GroupCommitStatisticsResponseDTO> GetGroupCommitStatisticsAsync(int userId, int groupId, DateOnly? startDate = null, DateOnly? endDate = null)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId)
+                ?? throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null)
+                return new GroupCommitStatisticsResponseDTO { GroupId = groupId, GroupCode = group.GroupCode };
+
+            // Fetch all commits to calculate overall total
+            var commits = await _commitRepository.GetCommitsByProjectIdAsync(project.ProjectId);
+            var overallCommits = commits.Count;
+
+            // Filter commits if dates are provided
+            var filteredCommits = commits;
+            if (startDate.HasValue || endDate.HasValue)
+            {
+                filteredCommits = commits.Where(c =>
+                {
+                    var commitDate = DateOnly.FromDateTime(c.CommitDate);
+                    return (!startDate.HasValue || commitDate >= startDate.Value) &&
+                           (!endDate.HasValue || commitDate <= endDate.Value);
+                }).ToList();
+            }
+
+            var lastCommitByUser = commits
+                .GroupBy(c => c.UserId)
+                .ToDictionary(g => g.Key, g => g.Max(x => x.CommitDate));
+
+            // Fetch all members of the group to ensure everyone is listed
+            var groupMembers = await _memberRepository.GetByGroupIdAsync(groupId);
+
+            var byUser = filteredCommits.GroupBy(c => c.UserId).ToDictionary(g => g.Key, g => g.ToList());
+            var periodStart = startDate ?? (filteredCommits.Any() ? DateOnly.FromDateTime(filteredCommits.Min(c => c.CommitDate).Date) : null);
+            var periodEnd = endDate ?? (filteredCommits.Any() ? DateOnly.FromDateTime(filteredCommits.Max(c => c.CommitDate).Date) : null);
+
+            var memberStats = groupMembers.Select(gm =>
+            {
+                var userId = gm.UserId;
+                var uc = byUser.TryGetValue(userId, out var list) ? list : new List<Commit>();
+                
+                var totalCommits = uc.Count;
+                decimal commitFrequency = 0;
+                int avgCommitSize = 0;
+
+                if (totalCommits > 0)
+                {
+                    var firstDate = uc.Min(c => c.CommitDate).Date;
+                    var lastDate  = uc.Max(c => c.CommitDate).Date;
+                    var days = Math.Max(1, (lastDate - firstDate).TotalDays + 1);
+                    commitFrequency = Math.Round((decimal)totalCommits / (decimal)days, 2);
+                    avgCommitSize = (int)Math.Round(uc.Average(c => (c.Additions ?? 0) + (c.Deletions ?? 0)));
+                }
+
+                return new MemberCommitStatisticsDTO
+                {
+                    UserId = userId,
+                    UserName = gm.User?.FullName ?? $"User {userId}",
+                    TotalCommits = totalCommits,
+                    TotalAdditions = uc.Sum(c => c.Additions ?? 0),
+                    TotalDeletions = uc.Sum(c => c.Deletions ?? 0),
+                    TotalChangedFiles = uc.Sum(c => c.ChangedFiles ?? 0),
+                    CommitFrequency = commitFrequency,
+                    AvgCommitSize = avgCommitSize,
+                    LastCommitDate = lastCommitByUser.TryGetValue(userId, out var lcd) ? lcd : (DateTime?)null
+                };
+            }).OrderByDescending(m => m.TotalCommits).ToList();
+
+            return new GroupCommitStatisticsResponseDTO
+            {
+                GroupId = groupId,
+                GroupCode = group.GroupCode,
+                ProjectId = project.ProjectId,
+                OverallCommits = overallCommits,
+                PeriodStart = periodStart,
+                PeriodEnd = periodEnd,
+                TotalCommits = memberStats.Sum(m => m.TotalCommits),
+                TotalAdditions = memberStats.Sum(m => m.TotalAdditions),
+                TotalDeletions = memberStats.Sum(m => m.TotalDeletions),
+                TotalChangedFiles = memberStats.Sum(m => m.TotalChangedFiles),
+                Members = memberStats
             };
         }
 
@@ -2297,6 +2427,13 @@ th { background-color: #2c3e50; color: white; }
                 return parsed;
 
             throw new Exception("Invalid reportType. Allowed values: task_assignment, task_completion, weekly, sprint.");
+        }
+
+        private static string SanitizeFileToken(string value)
+        {
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var sanitized = new string(value.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+            return string.IsNullOrWhiteSpace(sanitized) ? "report" : sanitized.Replace(' ', '_');
         }
 
         private static ProgressReportResponseDTO MapProgressReportToDTO(ProgressReport report)

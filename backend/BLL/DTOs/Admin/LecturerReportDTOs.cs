@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 namespace BLL.DTOs.Admin
@@ -119,6 +119,8 @@ namespace BLL.DTOs.Admin
         public int TotalDeletions { get; set; }
 
         public int TotalChangedFiles { get; set; }
+ 
+        public int OverallCommits { get; set; }
 
         public List<MemberCommitStatisticsDTO> Members { get; set; } = new();
     }
