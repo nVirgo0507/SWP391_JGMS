@@ -1,4 +1,4 @@
-﻿﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System;
 using System.Collections.Generic;
@@ -15,6 +15,8 @@ public partial class JgmsContext : DbContext
         : base(options)
     {
     }
+
+    public virtual DbSet<ChatMessage> ChatMessages { get; set; }
 
     public virtual DbSet<Commit> Commits { get; set; }
 
