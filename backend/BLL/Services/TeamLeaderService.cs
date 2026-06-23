@@ -38,6 +38,7 @@ namespace BLL.Services
         private readonly IPersonalTaskStatisticRepository _personalTaskStatisticRepository;
         private readonly byte[] _encryptionKey;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
+        private readonly IAiChatService _aiChatService;
 
         public TeamLeaderService(
             IGroupMemberRepository memberRepository,
@@ -53,7 +54,8 @@ namespace BLL.Services
             IJiraApiService jiraApiService,
             IPersonalTaskStatisticRepository personalTaskStatisticRepository,
             IConfiguration configuration,
-            ISrsDocumentRepository srsDocumentRepository)
+            ISrsDocumentRepository srsDocumentRepository,
+            IAiChatService aiChatService)
         {
             _memberRepository = memberRepository;
             _groupRepository = groupRepository;
@@ -68,6 +70,7 @@ namespace BLL.Services
             _jiraApiService = jiraApiService;
             _personalTaskStatisticRepository = personalTaskStatisticRepository;
             _srsDocumentRepository = srsDocumentRepository;
+            _aiChatService = aiChatService;
             // Derive the same stable AES-GCM key as JiraIntegrationService
             var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
             _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
@@ -2093,6 +2096,53 @@ namespace BLL.Services
                     Priority = r.Requirement?.Priority.ToString()
                 }).ToList()
         };
+
+        /// <summary>
+        /// Automatically generate SRS document sections using AI based on project requirements.
+        /// </summary>
+        public async Task<BLL.DTOs.Student.AiSrsResponseDTO> GenerateAiSrsContentAsync(int userId, int groupId, BLL.DTOs.Student.AiSrsRequestDTO dto)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            // Select requirements to include
+            var allRequirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            if (!allRequirements.Any())
+                throw new Exception("No requirements found for this project. Please create or import requirements first.");
+
+            List<Requirement> selectedRequirements;
+            if (dto.RequirementIds != null && dto.RequirementIds.Any())
+            {
+                selectedRequirements = allRequirements
+                    .Where(r => dto.RequirementIds.Contains(r.RequirementId))
+                    .ToList();
+                if (!selectedRequirements.Any())
+                    throw new Exception("None of the specified requirement IDs belong to this project.");
+            }
+            else
+            {
+                selectedRequirements = allRequirements.ToList();
+            }
+
+            var requirementsText = new System.Text.StringBuilder();
+            requirementsText.AppendLine($"Project: {project.ProjectName}");
+            if (!string.IsNullOrWhiteSpace(project.Description))
+            {
+                requirementsText.AppendLine($"Project Description: {project.Description}");
+            }
+            requirementsText.AppendLine("\nRequirements:");
+            foreach (var req in selectedRequirements.OrderBy(r => r.RequirementCode))
+            {
+                requirementsText.AppendLine($"- [{req.RequirementCode}] {req.Title}: {req.Description} (Type: {req.RequirementType}, Priority: {req.Priority})");
+            }
+
+            return await _aiChatService.GenerateSrsContentAsync(requirementsText.ToString());
+        }
 
         private static string GenerateSrsHtml(SrsDocument doc, Project project, StudentGroup group, List<SrsDocument> allVersions)
         {

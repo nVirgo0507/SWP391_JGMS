@@ -6,6 +6,9 @@ using BLL.Services.Interface;
 using DAL.Models;
 using DAL.Repositories.Interface;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using System;
+using BLL.DTOs.Student;
 
 namespace BLL.Services
 {
@@ -77,6 +80,115 @@ namespace BLL.Services
             await _chatRepo.AddAsync(chatMessage);
 
             return replyContent;
+        }
+
+        public async Task<AiSrsResponseDTO> GenerateSrsContentAsync(string requirementsText)
+        {
+            var systemPrompt = @"You are a System Analyst. Based on the user's requirements, generate the following sections for an SRS document: Introduction, Scope, ProductPerspective, UserClasses, OperatingEnvironment, AssumptionsDependencies. 
+Return ONLY valid JSON matching those exact keys. Do not include markdown code blocks or any other text.";
+
+            var payload = new
+            {
+                model = "local-model",
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = requirementsText }
+                },
+                temperature = 0.3,
+                stream = false
+            };
+
+            var response = await _httpClient.PostAsJsonAsync("v1/chat/completions", payload);
+            response.EnsureSuccessStatusCode();
+
+            var jsonString = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(jsonString);
+            
+            var content = document.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                throw new Exception("Received empty content from AI.");
+            }
+
+            // Remove any markdown block syntax if the AI still includes it
+            content = content.Trim();
+            if (content.StartsWith("```json"))
+            {
+                content = content.Substring(7);
+            }
+            if (content.StartsWith("```"))
+            {
+                content = content.Substring(3);
+            }
+            if (content.EndsWith("```"))
+            {
+                content = content.Substring(0, content.Length - 3);
+            }
+
+            using var srsDoc = JsonDocument.Parse(content);
+            var root = srsDoc.RootElement;
+
+            string? GetStringOrSerialized(JsonElement element)
+            {
+                switch (element.ValueKind)
+                {
+                    case JsonValueKind.String:
+                        return element.GetString();
+                    case JsonValueKind.Array:
+                        var list = new List<string>();
+                        foreach (var item in element.EnumerateArray())
+                        {
+                            var str = GetStringOrSerialized(item);
+                            if (str != null)
+                            {
+                                list.Add(str);
+                            }
+                        }
+                        return string.Join("\n", list);
+                    case JsonValueKind.Object:
+                        return JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = true });
+                    case JsonValueKind.Number:
+                    case JsonValueKind.True:
+                    case JsonValueKind.False:
+                        return element.GetRawText();
+                    case JsonValueKind.Null:
+                    case JsonValueKind.Undefined:
+                    default:
+                        return null;
+                }
+            }
+
+            string? GetPropertyString(string name)
+            {
+                if (root.TryGetProperty(name, out var prop))
+                {
+                    return GetStringOrSerialized(prop);
+                }
+                foreach (var objProp in root.EnumerateObject())
+                {
+                    if (string.Equals(objProp.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return GetStringOrSerialized(objProp.Value);
+                    }
+                }
+                return null;
+            }
+
+            return new AiSrsResponseDTO
+            {
+                Introduction = GetPropertyString("Introduction"),
+                Scope = GetPropertyString("Scope"),
+                ProductPerspective = GetPropertyString("ProductPerspective"),
+                UserClasses = GetPropertyString("UserClasses"),
+                OperatingEnvironment = GetPropertyString("OperatingEnvironment"),
+                AssumptionsDependencies = GetPropertyString("AssumptionsDependencies")
+            };
         }
     }
 }

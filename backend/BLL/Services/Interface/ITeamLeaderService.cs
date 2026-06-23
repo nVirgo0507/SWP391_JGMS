@@ -177,6 +177,11 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<SrsDocumentResponseDTO> RegenerateSrsDocumentAsync(int userId, int groupId, int documentId, RegenerateSrsDocumentDTO dto);
 
+        /// <summary>
+        /// Automatically generate SRS document sections using AI based on project requirements.
+        /// </summary>
+        Task<BLL.DTOs.Student.AiSrsResponseDTO> GenerateAiSrsContentAsync(int userId, int groupId, BLL.DTOs.Student.AiSrsRequestDTO dto);
+
         #endregion
     }
 }

@@ -209,7 +209,10 @@ public class Program
 		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
 
 		// AI Chat Integration
-		builder.Services.AddHttpClient<IAiChatService, AiChatService>();
+		builder.Services.AddHttpClient<IAiChatService, AiChatService>(client =>
+		{
+			client.Timeout = TimeSpan.FromMinutes(5);
+		});
 
         var app = builder.Build();
 
