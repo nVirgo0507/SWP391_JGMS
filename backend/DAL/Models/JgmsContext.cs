@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System;
 using System.Collections.Generic;
@@ -650,6 +650,15 @@ public partial class JgmsContext : DbContext
             entity.Property(e => e.UserClasses).HasColumnName("user_classes");
             entity.Property(e => e.OperatingEnvironment).HasColumnName("operating_environment");
             entity.Property(e => e.AssumptionsDependencies).HasColumnName("assumptions_dependencies");
+            entity.Property(e => e.Glossary).HasColumnName("glossary");
+            entity.Property(e => e.UserInterfaces).HasColumnName("user_interfaces");
+            entity.Property(e => e.HardwareInterfaces).HasColumnName("hardware_interfaces");
+            entity.Property(e => e.SoftwareInterfaces).HasColumnName("software_interfaces");
+            entity.Property(e => e.CommunicationsInterfaces).HasColumnName("communications_interfaces");
+            entity.Property(e => e.PerformanceRequirements).HasColumnName("performance_requirements");
+            entity.Property(e => e.SecurityRequirements).HasColumnName("security_requirements");
+            entity.Property(e => e.SafetyRequirements).HasColumnName("safety_requirements");
+            entity.Property(e => e.SoftwareSystemAttributes).HasColumnName("software_system_attributes");
             entity.Property(e => e.Status)
                 .HasDefaultValue(DocumentStatus.draft)
                 .HasColumnName("status");
