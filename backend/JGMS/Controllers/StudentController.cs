@@ -1040,6 +1040,25 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Automatically generate SRS document sections using AI based on project requirements. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/srs-documents/generate-ai")]
+        [ProducesResponseType(typeof(BLL.DTOs.Student.AiSrsResponseDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GenerateAiSrsContent(string groupCode, [FromBody] BLL.DTOs.Student.AiSrsRequestDTO dto)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var aiResponse = await _teamLeaderService.GenerateAiSrsContentAsync(GetCurrentUserId(), groupId, dto);
+                return Ok(aiResponse);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
         /// Update SRS document metadata. Leader only.
         /// Set status to "published" to finalize the document.
         /// </summary>

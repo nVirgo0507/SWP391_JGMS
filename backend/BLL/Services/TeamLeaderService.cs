@@ -38,6 +38,7 @@ namespace BLL.Services
         private readonly IPersonalTaskStatisticRepository _personalTaskStatisticRepository;
         private readonly byte[] _encryptionKey;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
+        private readonly IAiChatService _aiChatService;
 
         public TeamLeaderService(
             IGroupMemberRepository memberRepository,
@@ -53,7 +54,8 @@ namespace BLL.Services
             IJiraApiService jiraApiService,
             IPersonalTaskStatisticRepository personalTaskStatisticRepository,
             IConfiguration configuration,
-            ISrsDocumentRepository srsDocumentRepository)
+            ISrsDocumentRepository srsDocumentRepository,
+            IAiChatService aiChatService)
         {
             _memberRepository = memberRepository;
             _groupRepository = groupRepository;
@@ -68,6 +70,7 @@ namespace BLL.Services
             _jiraApiService = jiraApiService;
             _personalTaskStatisticRepository = personalTaskStatisticRepository;
             _srsDocumentRepository = srsDocumentRepository;
+            _aiChatService = aiChatService;
             // Derive the same stable AES-GCM key as JiraIntegrationService
             var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
             _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
@@ -1776,6 +1779,15 @@ namespace BLL.Services
                 UserClasses = dto.UserClasses,
                 OperatingEnvironment = dto.OperatingEnvironment,
                 AssumptionsDependencies = dto.AssumptionsDependencies,
+                Glossary = dto.Glossary,
+                UserInterfaces = dto.UserInterfaces,
+                HardwareInterfaces = dto.HardwareInterfaces,
+                SoftwareInterfaces = dto.SoftwareInterfaces,
+                CommunicationsInterfaces = dto.CommunicationsInterfaces,
+                PerformanceRequirements = dto.PerformanceRequirements,
+                SecurityRequirements = dto.SecurityRequirements,
+                SafetyRequirements = dto.SafetyRequirements,
+                SoftwareSystemAttributes = dto.SoftwareSystemAttributes,
                 Status = DocumentStatus.draft,
                 GeneratedBy = userId,
                 GeneratedAt = DateTime.UtcNow
@@ -1857,6 +1869,15 @@ namespace BLL.Services
             if (dto.UserClasses != null) doc.UserClasses = dto.UserClasses;
             if (dto.OperatingEnvironment != null) doc.OperatingEnvironment = dto.OperatingEnvironment;
             if (dto.AssumptionsDependencies != null) doc.AssumptionsDependencies = dto.AssumptionsDependencies;
+            if (dto.Glossary != null) doc.Glossary = dto.Glossary;
+            if (dto.UserInterfaces != null) doc.UserInterfaces = dto.UserInterfaces;
+            if (dto.HardwareInterfaces != null) doc.HardwareInterfaces = dto.HardwareInterfaces;
+            if (dto.SoftwareInterfaces != null) doc.SoftwareInterfaces = dto.SoftwareInterfaces;
+            if (dto.CommunicationsInterfaces != null) doc.CommunicationsInterfaces = dto.CommunicationsInterfaces;
+            if (dto.PerformanceRequirements != null) doc.PerformanceRequirements = dto.PerformanceRequirements;
+            if (dto.SecurityRequirements != null) doc.SecurityRequirements = dto.SecurityRequirements;
+            if (dto.SafetyRequirements != null) doc.SafetyRequirements = dto.SafetyRequirements;
+            if (dto.SoftwareSystemAttributes != null) doc.SoftwareSystemAttributes = dto.SoftwareSystemAttributes;
             if (dto.Status != null)
             {
                 doc.Status = dto.Status.ToLower() switch
@@ -2073,6 +2094,15 @@ namespace BLL.Services
             UserClasses = doc.UserClasses,
             OperatingEnvironment = doc.OperatingEnvironment,
             AssumptionsDependencies = doc.AssumptionsDependencies,
+            Glossary = doc.Glossary,
+            UserInterfaces = doc.UserInterfaces,
+            HardwareInterfaces = doc.HardwareInterfaces,
+            SoftwareInterfaces = doc.SoftwareInterfaces,
+            CommunicationsInterfaces = doc.CommunicationsInterfaces,
+            PerformanceRequirements = doc.PerformanceRequirements,
+            SecurityRequirements = doc.SecurityRequirements,
+            SafetyRequirements = doc.SafetyRequirements,
+            SoftwareSystemAttributes = doc.SoftwareSystemAttributes,
             FilePath = doc.FilePath,
             Status = doc.Status.ToString(),
             GeneratedBy = doc.GeneratedBy,
@@ -2094,20 +2124,67 @@ namespace BLL.Services
                 }).ToList()
         };
 
+        /// <summary>
+        /// Automatically generate SRS document sections using AI based on project requirements.
+        /// </summary>
+        public async Task<BLL.DTOs.Student.AiSrsResponseDTO> GenerateAiSrsContentAsync(int userId, int groupId, BLL.DTOs.Student.AiSrsRequestDTO dto)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            // Select requirements to include
+            var allRequirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
+            if (!allRequirements.Any())
+                throw new Exception("No requirements found for this project. Please create or import requirements first.");
+
+            List<Requirement> selectedRequirements;
+            if (dto.RequirementIds != null && dto.RequirementIds.Any())
+            {
+                selectedRequirements = allRequirements
+                    .Where(r => dto.RequirementIds.Contains(r.RequirementId))
+                    .ToList();
+                if (!selectedRequirements.Any())
+                    throw new Exception("None of the specified requirement IDs belong to this project.");
+            }
+            else
+            {
+                selectedRequirements = allRequirements.ToList();
+            }
+
+            var requirementsText = new System.Text.StringBuilder();
+            requirementsText.AppendLine($"Project: {project.ProjectName}");
+            if (!string.IsNullOrWhiteSpace(project.Description))
+            {
+                requirementsText.AppendLine($"Project Description: {project.Description}");
+            }
+            requirementsText.AppendLine("\nRequirements:");
+            foreach (var req in selectedRequirements.OrderBy(r => r.RequirementCode))
+            {
+                requirementsText.AppendLine($"- [{req.RequirementCode}] {req.Title}: {req.Description} (Type: {req.RequirementType}, Priority: {req.Priority})");
+            }
+
+            return await _aiChatService.GenerateSrsContentAsync(requirementsText.ToString());
+        }
+
         private static string GenerateSrsHtml(SrsDocument doc, Project project, StudentGroup group, List<SrsDocument> allVersions)
         {
             // Filter by requirement type — more robust than matching SectionNumber prefix
             var functional = doc.SrsIncludedRequirements
                 .Where(r => r.Requirement?.RequirementType == RequirementType.functional
                          || (r.Requirement == null && r.SectionNumber != null &&
-                             (r.SectionNumber.StartsWith("4.1") || r.SectionNumber.StartsWith("3.1"))))
+                             (r.SectionNumber.StartsWith("6.1") || r.SectionNumber.StartsWith("4.1") || r.SectionNumber.StartsWith("3.1"))))
                 .OrderBy(r => r.SectionNumber)
                 .ToList();
 
             var nonFunctional = doc.SrsIncludedRequirements
                 .Where(r => r.Requirement?.RequirementType == RequirementType.non_functional
                          || (r.Requirement == null && r.SectionNumber != null &&
-                             (r.SectionNumber.StartsWith("4.2") || r.SectionNumber.StartsWith("3.2"))))
+                             (r.SectionNumber.StartsWith("6.2") || r.SectionNumber.StartsWith("4.2") || r.SectionNumber.StartsWith("3.2"))))
                 .OrderBy(r => r.SectionNumber)
                 .ToList();
 
@@ -2166,9 +2243,12 @@ namespace BLL.Services
             sb.AppendLine("<h2>Table of Contents</h2>");
             sb.AppendLine("<div class=\"toc\"><ol>");
             sb.AppendLine("<li>Introduction</li>");
+            sb.AppendLine("<li>Glossary and Definitions</li>");
             sb.AppendLine("<li>Scope</li>");
             sb.AppendLine("<li>Overall Description<ol><li>Product Perspective</li><li>User Classes and Characteristics</li><li>Operating Environment</li><li>Assumptions and Dependencies</li></ol></li>");
+            sb.AppendLine("<li>External Interface Requirements<ol><li>User Interfaces</li><li>Hardware Interfaces</li><li>Software Interfaces</li><li>Communications Interfaces</li></ol></li>");
             sb.AppendLine("<li>Specific Requirements<ol><li>Functional Requirements</li><li>Non-Functional Requirements</li></ol></li>");
+            sb.AppendLine("<li>System Attributes & Other Requirements<ol><li>Performance Requirements</li><li>Security Requirements</li><li>Safety Requirements</li><li>Software System Attributes</li></ol></li>");
             sb.AppendLine("<li>Requirements Summary</li>");
             sb.AppendLine("</ol></div>");
 
@@ -2176,19 +2256,23 @@ namespace BLL.Services
             sb.AppendLine("<h2>1. Introduction</h2>");
             sb.AppendLine($"<p>{Escape(doc.Introduction ?? "N/A")}</p>");
 
-            // ── 2. Scope ───────────────────────────────────────────────────────
-            sb.AppendLine("<h2>2. Scope</h2>");
+            // ── 2. Glossary and Definitions ────────────────────────────────────
+            sb.AppendLine("<h2>2. Glossary and Definitions</h2>");
+            sb.AppendLine($"<p>{Escape(doc.Glossary ?? "N/A")}</p>");
+
+            // ── 3. Scope ───────────────────────────────────────────────────────
+            sb.AppendLine("<h2>3. Scope</h2>");
             sb.AppendLine($"<p>{Escape(doc.Scope ?? "N/A")}</p>");
 
-            // ── 3. Overall Description ─────────────────────────────────────────
-            sb.AppendLine("<h2>3. Overall Description</h2>");
+            // ── 4. Overall Description ─────────────────────────────────────────
+            sb.AppendLine("<h2>4. Overall Description</h2>");
             sb.AppendLine("<div class=\"overall-desc\">");
 
             // Detect Jira usage from already-loaded data (no extra DB calls)
             var usesJira = doc.SrsIncludedRequirements.Any(r => r.Requirement?.JiraIssue != null);
 
-            // 3.1 Product Perspective — use stored value or auto-generate
-            sb.AppendLine("<h3>3.1 Product Perspective</h3>");
+            // 4.1 Product Perspective — use stored value or auto-generate
+            sb.AppendLine("<h3>4.1 Product Perspective</h3>");
             if (!string.IsNullOrWhiteSpace(doc.ProductPerspective))
             {
                 sb.AppendLine($"<p>{Escape(doc.ProductPerspective)}</p>");
@@ -2203,8 +2287,8 @@ namespace BLL.Services
                               $"This document specifies the requirements for the current development cycle.</p>");
             }
 
-            // 3.2 User Classes — use stored value or auto-generate
-            sb.AppendLine("<h3>3.2 User Classes and Characteristics</h3>");
+            // 4.2 User Classes — use stored value or auto-generate
+            sb.AppendLine("<h3>4.2 User Classes and Characteristics</h3>");
             if (!string.IsNullOrWhiteSpace(doc.UserClasses))
             {
                 sb.AppendLine($"<p>{Escape(doc.UserClasses)}</p>");
@@ -2215,8 +2299,8 @@ namespace BLL.Services
                               "via the <code>userClasses</code> field when generating or updating this document.</em></p>");
             }
 
-            // 3.3 Operating Environment — use stored value or generic placeholder
-            sb.AppendLine("<h3>3.3 Operating Environment</h3>");
+            // 4.3 Operating Environment — use stored value or generic placeholder
+            sb.AppendLine("<h3>4.3 Operating Environment</h3>");
             if (!string.IsNullOrWhiteSpace(doc.OperatingEnvironment))
             {
                 sb.AppendLine($"<p>{Escape(doc.OperatingEnvironment)}</p>");
@@ -2228,8 +2312,8 @@ namespace BLL.Services
                               "<code>operatingEnvironment</code> field.</em></p>");
             }
 
-            // 3.4 Assumptions and Dependencies — use stored value or auto-generate
-            sb.AppendLine("<h3>3.4 Assumptions and Dependencies</h3>");
+            // 4.4 Assumptions and Dependencies — use stored value or auto-generate
+            sb.AppendLine("<h3>4.4 Assumptions and Dependencies</h3>");
             if (!string.IsNullOrWhiteSpace(doc.AssumptionsDependencies))
             {
                 sb.AppendLine($"<p>{Escape(doc.AssumptionsDependencies)}</p>");
@@ -2248,17 +2332,39 @@ namespace BLL.Services
 
             sb.AppendLine("</div>");
 
-            // ── 4. Specific Requirements ───────────────────────────────────────
-            sb.AppendLine("<h2>4. Specific Requirements</h2>");
+            // ── 5. External Interface Requirements ─────────────────────────────
+            sb.AppendLine("<h2>5. External Interface Requirements</h2>");
+            sb.AppendLine("<h3>5.1 User Interfaces</h3>");
+            sb.AppendLine($"<p>{Escape(doc.UserInterfaces ?? "N/A")}</p>");
+            sb.AppendLine("<h3>5.2 Hardware Interfaces</h3>");
+            sb.AppendLine($"<p>{Escape(doc.HardwareInterfaces ?? "N/A")}</p>");
+            sb.AppendLine("<h3>5.3 Software Interfaces</h3>");
+            sb.AppendLine($"<p>{Escape(doc.SoftwareInterfaces ?? "N/A")}</p>");
+            sb.AppendLine("<h3>5.4 Communications Interfaces</h3>");
+            sb.AppendLine($"<p>{Escape(doc.CommunicationsInterfaces ?? "N/A")}</p>");
 
-            sb.AppendLine("<h3>4.1 Functional Requirements</h3>");
+            // ── 6. Specific Requirements ───────────────────────────────────────
+            sb.AppendLine("<h2>6. Specific Requirements</h2>");
+
+            sb.AppendLine("<h3>6.1 Functional Requirements</h3>");
             AppendRequirementBlocks(sb, functional);
 
-            sb.AppendLine("<h3>4.2 Non-Functional Requirements</h3>");
+            sb.AppendLine("<h3>6.2 Non-Functional Requirements</h3>");
             AppendRequirementBlocks(sb, nonFunctional);
 
-            // ── 5. Requirements Summary ────────────────────────────────────────
-            sb.AppendLine("<h2>5. Requirements Summary</h2>");
+            // ── 7. System Attributes & Other Requirements ──────────────────────
+            sb.AppendLine("<h2>7. System Attributes & Other Requirements</h2>");
+            sb.AppendLine("<h3>7.1 Performance Requirements</h3>");
+            sb.AppendLine($"<p>{Escape(doc.PerformanceRequirements ?? "N/A")}</p>");
+            sb.AppendLine("<h3>7.2 Security Requirements</h3>");
+            sb.AppendLine($"<p>{Escape(doc.SecurityRequirements ?? "N/A")}</p>");
+            sb.AppendLine("<h3>7.3 Safety Requirements</h3>");
+            sb.AppendLine($"<p>{Escape(doc.SafetyRequirements ?? "N/A")}</p>");
+            sb.AppendLine("<h3>7.4 Software System Attributes</h3>");
+            sb.AppendLine($"<p>{Escape(doc.SoftwareSystemAttributes ?? "N/A")}</p>");
+
+            // ── 8. Requirements Summary ────────────────────────────────────────
+            sb.AppendLine("<h2>8. Requirements Summary</h2>");
             sb.AppendLine("<table><thead><tr><th>ID</th><th>Code</th><th>Title</th><th>Type</th><th>Priority</th><th>Jira</th></tr></thead><tbody>");
             foreach (var req in doc.SrsIncludedRequirements.OrderBy(r => r.SectionNumber))
             {
@@ -2350,7 +2456,7 @@ th { background-color: #2c3e50; color: white; }
         }
 
         private static string Escape(string? text) =>
-            System.Net.WebUtility.HtmlEncode(text ?? "");
+            System.Net.WebUtility.HtmlEncode(text ?? "").Replace("\r\n", "<br />").Replace("\n", "<br />");
 
         private static string GetPriorityClass(PriorityLevel? priority) =>
             priority switch

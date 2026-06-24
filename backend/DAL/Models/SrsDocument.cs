@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -31,6 +31,16 @@ public partial class SrsDocument
 
     /// <summary>3.4 — Student-provided assumptions and dependencies. Auto-generated if null.</summary>
     public string? AssumptionsDependencies { get; set; }
+
+    public string? Glossary { get; set; }
+    public string? UserInterfaces { get; set; }
+    public string? HardwareInterfaces { get; set; }
+    public string? SoftwareInterfaces { get; set; }
+    public string? CommunicationsInterfaces { get; set; }
+    public string? PerformanceRequirements { get; set; }
+    public string? SecurityRequirements { get; set; }
+    public string? SafetyRequirements { get; set; }
+    public string? SoftwareSystemAttributes { get; set; }
 
     public string? FilePath { get; set; }
 

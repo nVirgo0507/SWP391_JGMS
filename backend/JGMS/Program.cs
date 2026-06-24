@@ -167,6 +167,7 @@ public class Program
 		builder.Services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
 		builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 		builder.Services.AddScoped<ICommitRepository, CommitRepository>();
+		builder.Services.AddScoped<DAL.Repositories.Interface.IChatMessageRepository, DAL.Repositories.ChatMessageRepository>();
 		builder.Services.AddScoped<IPersonalTaskStatisticRepository, PersonalTaskStatisticRepository>();
 		builder.Services.AddScoped<ISrsDocumentRepository, SrsDocumentRepository>();
 		builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
@@ -206,6 +207,12 @@ public class Program
 		builder.Services.AddScoped<IGithubIntegrationService, GithubIntegrationService>();
 		// Identifier resolver — converts group codes, emails, etc. to internal IDs
 		builder.Services.AddScoped<BLL.Helpers.IdentifierResolver>();
+
+		// AI Chat Integration
+		builder.Services.AddHttpClient<IAiChatService, AiChatService>(client =>
+		{
+			client.Timeout = TimeSpan.FromMinutes(5);
+		});
 
         var app = builder.Build();
 

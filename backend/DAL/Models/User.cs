@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -33,6 +33,8 @@ public partial class User
     public DateTime? UpdatedAt { get; set; }
 
     public virtual ICollection<CommitStatistic> CommitStatistics { get; set; } = new List<CommitStatistic>();
+
+    public virtual ICollection<ChatMessage> ChatMessages { get; set; } = new List<ChatMessage>();
 
     public virtual ICollection<Commit> Commits { get; set; } = new List<Commit>();
 
