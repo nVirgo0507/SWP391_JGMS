@@ -84,7 +84,8 @@ namespace BLL.Services
 
         public async Task<AiSrsResponseDTO> GenerateSrsContentAsync(string requirementsText)
         {
-            var systemPrompt = @"You are a System Analyst. Based on the user's requirements, generate the following sections for an SRS document: Introduction, Scope, ProductPerspective, UserClasses, OperatingEnvironment, AssumptionsDependencies. 
+            var systemPrompt = @"You are a System Analyst. Based on the user's requirements, generate the following sections for an SRS document: Introduction, Scope, ProductPerspective, UserClasses, OperatingEnvironment, AssumptionsDependencies, Glossary, UserInterfaces, HardwareInterfaces, SoftwareInterfaces, CommunicationsInterfaces, PerformanceRequirements, SecurityRequirements, SafetyRequirements, SoftwareSystemAttributes. 
+Write in a natural, professional, and highly readable human tone. Avoid robotic, overly rigid, or 'machinery' phrasing, especially in the Scope and Introduction sections.
 Return ONLY valid JSON matching those exact keys. Do not include markdown code blocks or any other text.";
 
             var payload = new
@@ -95,7 +96,7 @@ Return ONLY valid JSON matching those exact keys. Do not include markdown code b
                     new { role = "system", content = systemPrompt },
                     new { role = "user", content = requirementsText }
                 },
-                temperature = 0.3,
+                temperature = 0.5,
                 stream = false
             };
 
@@ -187,7 +188,16 @@ Return ONLY valid JSON matching those exact keys. Do not include markdown code b
                 ProductPerspective = GetPropertyString("ProductPerspective"),
                 UserClasses = GetPropertyString("UserClasses"),
                 OperatingEnvironment = GetPropertyString("OperatingEnvironment"),
-                AssumptionsDependencies = GetPropertyString("AssumptionsDependencies")
+                AssumptionsDependencies = GetPropertyString("AssumptionsDependencies"),
+                Glossary = GetPropertyString("Glossary"),
+                UserInterfaces = GetPropertyString("UserInterfaces"),
+                HardwareInterfaces = GetPropertyString("HardwareInterfaces"),
+                SoftwareInterfaces = GetPropertyString("SoftwareInterfaces"),
+                CommunicationsInterfaces = GetPropertyString("CommunicationsInterfaces"),
+                PerformanceRequirements = GetPropertyString("PerformanceRequirements"),
+                SecurityRequirements = GetPropertyString("SecurityRequirements"),
+                SafetyRequirements = GetPropertyString("SafetyRequirements"),
+                SoftwareSystemAttributes = GetPropertyString("SoftwareSystemAttributes")
             };
         }
     }
