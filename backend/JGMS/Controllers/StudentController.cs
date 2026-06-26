@@ -25,18 +25,27 @@ namespace SWP391_JGMS.Controllers
     public class StudentController : ControllerBase
     {
         private readonly IStudentService _studentService;
-        private readonly ITeamLeaderService _teamLeaderService;
+        private readonly ITeamLeaderProjectService _teamLeaderProjectService;
+        private readonly ITeamLeaderRequirementService _teamLeaderRequirementService;
+        private readonly ITeamLeaderTaskService _teamLeaderTaskService;
+        private readonly ITeamLeaderSrsService _teamLeaderSrsService;
         private readonly ITeamMemberService _teamMemberService;
         private readonly IdentifierResolver _resolver;
 
         public StudentController(
             IStudentService studentService,
-            ITeamLeaderService teamLeaderService,
+            ITeamLeaderProjectService teamLeaderProjectService,
+            ITeamLeaderRequirementService teamLeaderRequirementService,
+            ITeamLeaderTaskService teamLeaderTaskService,
+            ITeamLeaderSrsService teamLeaderSrsService,
             ITeamMemberService teamMemberService,
             IdentifierResolver resolver)
         {
             _studentService = studentService;
-            _teamLeaderService = teamLeaderService;
+            _teamLeaderProjectService = teamLeaderProjectService;
+            _teamLeaderRequirementService = teamLeaderRequirementService;
+            _teamLeaderTaskService = teamLeaderTaskService;
+            _teamLeaderSrsService = teamLeaderSrsService;
             _teamMemberService = teamMemberService;
             _resolver = resolver;
         }
@@ -485,7 +494,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var project = await _teamLeaderService.GetGroupProjectAsync(GetCurrentUserId(), groupId);
+                var project = await _teamLeaderProjectService.GetGroupProjectAsync(GetCurrentUserId(), groupId);
                 if (project == null)
                     return NotFound(new { message = "Project not found" });
                 return Ok(project);
@@ -511,7 +520,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var reports = await _teamLeaderService.GetGroupProgressReportsAsync(GetCurrentUserId(), groupId);
+                var reports = await _teamLeaderProjectService.GetGroupProgressReportsAsync(GetCurrentUserId(), groupId);
                 return Ok(reports);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -536,7 +545,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var template = await _teamLeaderService.GetGroupProgressReportTemplateAsync(GetCurrentUserId(), groupId);
+                var template = await _teamLeaderProjectService.GetGroupProgressReportTemplateAsync(GetCurrentUserId(), groupId);
                 return Ok(template);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -560,7 +569,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var report = await _teamLeaderService.CreateProgressReportAsync(GetCurrentUserId(), groupId, dto);
+                var report = await _teamLeaderProjectService.CreateProgressReportAsync(GetCurrentUserId(), groupId, dto);
                 return CreatedAtAction(nameof(GetGroupProgressReports), new { groupCode }, report);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -586,7 +595,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var (content, fileName, contentType) = await _teamLeaderService.ExportGroupProgressReportAsync(
+                var (content, fileName, contentType) = await _teamLeaderProjectService.ExportGroupProgressReportAsync(
                     GetCurrentUserId(),
                     groupId,
                     reportId,
@@ -617,7 +626,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var (content, _, _) = await _teamLeaderService.ExportGroupProgressReportAsync(
+                var (content, _, _) = await _teamLeaderProjectService.ExportGroupProgressReportAsync(
                     GetCurrentUserId(),
                     groupId,
                     reportId,
@@ -649,7 +658,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var stats = await _teamLeaderService.GetGroupCommitStatisticsAsync(GetCurrentUserId(), groupId, startDate, endDate);
+                var stats = await _teamLeaderProjectService.GetGroupCommitStatisticsAsync(GetCurrentUserId(), groupId, startDate, endDate);
                 return Ok(stats);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -700,7 +709,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var requirement = await _teamLeaderService.CreateRequirementAsync(GetCurrentUserId(), groupId, dto);
+                var requirement = await _teamLeaderRequirementService.CreateRequirementAsync(GetCurrentUserId(), groupId, dto);
                 return CreatedAtAction(nameof(GetGroupRequirements), new { groupCode }, requirement);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -720,7 +729,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var requirement = await _teamLeaderService.UpdateRequirementAsync(GetCurrentUserId(), groupId, requirementId, dto);
+                var requirement = await _teamLeaderRequirementService.UpdateRequirementAsync(GetCurrentUserId(), groupId, requirementId, dto);
                 return Ok(requirement);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -739,7 +748,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _teamLeaderService.DeleteRequirementAsync(GetCurrentUserId(), groupId, requirementId);
+                await _teamLeaderRequirementService.DeleteRequirementAsync(GetCurrentUserId(), groupId, requirementId);
                 return Ok(new { message = "Requirement deleted successfully" });
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -758,7 +767,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var ordered = await _teamLeaderService.ReorderRequirementsAsync(GetCurrentUserId(), groupId, dto);
+                var ordered = await _teamLeaderRequirementService.ReorderRequirementsAsync(GetCurrentUserId(), groupId, dto);
                 return Ok(ordered);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -780,7 +789,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var result = await _teamLeaderService.ImportRequirementsFromJiraAsync(GetCurrentUserId(), groupId);
+                var result = await _teamLeaderRequirementService.ImportRequirementsFromJiraAsync(GetCurrentUserId(), groupId);
                 return Ok(result);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -808,7 +817,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var tasks = await _teamLeaderService.GetGroupTasksAsync(GetCurrentUserId(), groupId);
+                var tasks = await _teamLeaderTaskService.GetGroupTasksAsync(GetCurrentUserId(), groupId);
                 return Ok(tasks);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -827,7 +836,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var task = await _teamLeaderService.CreateTaskAsync(GetCurrentUserId(), groupId, dto);
+                var task = await _teamLeaderTaskService.CreateTaskAsync(GetCurrentUserId(), groupId, dto);
                 return CreatedAtAction(nameof(GetGroupTasks), new { groupCode }, task);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -846,7 +855,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var task = await _teamLeaderService.CreateTaskFromJiraIssueAsync(GetCurrentUserId(), groupId, dto);
+                var task = await _teamLeaderTaskService.CreateTaskFromJiraIssueAsync(GetCurrentUserId(), groupId, dto);
                 return CreatedAtAction(nameof(GetGroupTasks), new { groupCode }, task);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -866,7 +875,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var task = await _teamLeaderService.UpdateTaskAsync(GetCurrentUserId(), groupId, taskId, dto);
+                var task = await _teamLeaderTaskService.UpdateTaskAsync(GetCurrentUserId(), groupId, taskId, dto);
                 return Ok(task);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -885,7 +894,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _teamLeaderService.AssignTaskAsync(GetCurrentUserId(), groupId, taskId, dto.MemberId);
+                await _teamLeaderTaskService.AssignTaskAsync(GetCurrentUserId(), groupId, taskId, dto.MemberId);
                 return Ok(new { message = "Task assigned successfully" });
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -904,7 +913,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                await _teamLeaderService.DeleteTaskAsync(GetCurrentUserId(), groupId, taskId);
+                await _teamLeaderTaskService.DeleteTaskAsync(GetCurrentUserId(), groupId, taskId);
                 return Ok(new { message = "Task deleted successfully" });
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -924,7 +933,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var task = await _teamLeaderService.MoveTaskToSprintAsync(GetCurrentUserId(), groupId, taskId, dto.SprintId);
+                var task = await _teamLeaderTaskService.MoveTaskToSprintAsync(GetCurrentUserId(), groupId, taskId, dto.SprintId);
                 return Ok(task);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -943,7 +952,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var task = await _teamLeaderService.LinkTaskToRequirementAsync(GetCurrentUserId(), groupId, taskId, dto.RequirementId);
+                var task = await _teamLeaderTaskService.LinkTaskToRequirementAsync(GetCurrentUserId(), groupId, taskId, dto.RequirementId);
                 return Ok(task);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -962,7 +971,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var result = await _teamLeaderService.SyncToJiraAsync(GetCurrentUserId(), groupId);
+                var result = await _teamLeaderTaskService.SyncToJiraAsync(GetCurrentUserId(), groupId);
                 return Ok(result);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -990,7 +999,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var documents = await _teamLeaderService.GetGroupSrsDocumentsAsync(GetCurrentUserId(), groupId);
+                var documents = await _teamLeaderSrsService.GetGroupSrsDocumentsAsync(GetCurrentUserId(), groupId);
                 return Ok(documents);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -1010,7 +1019,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var srs = await _teamLeaderService.GetGroupSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
+                var srs = await _teamLeaderSrsService.GetGroupSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
                 if (srs == null)
                     return NotFound(new { message = "SRS document not found" });
                 return Ok(srs);
@@ -1031,7 +1040,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var srs = await _teamLeaderService.GenerateSrsDocumentAsync(GetCurrentUserId(), groupId, dto);
+                var srs = await _teamLeaderSrsService.GenerateSrsDocumentAsync(GetCurrentUserId(), groupId, dto);
                 return CreatedAtAction(nameof(GetGroupSrsDocument), new { groupCode, documentId = srs.DocumentId }, srs);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -1050,7 +1059,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var aiResponse = await _teamLeaderService.GenerateAiSrsContentAsync(GetCurrentUserId(), groupId, dto);
+                var aiResponse = await _teamLeaderSrsService.GenerateAiSrsContentAsync(GetCurrentUserId(), groupId, dto);
                 return Ok(aiResponse);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -1070,7 +1079,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var srs = await _teamLeaderService.UpdateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
+                var srs = await _teamLeaderSrsService.UpdateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
                 return Ok(srs);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -1091,7 +1100,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var (content, fileName) = await _teamLeaderService.DownloadSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
+                var (content, fileName) = await _teamLeaderSrsService.DownloadSrsDocumentAsync(GetCurrentUserId(), groupId, documentId);
                 return File(content, "text/html", fileName);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -1112,7 +1121,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var (content, fileName) = await _teamLeaderService.DownloadSrsDocumentAsDocAsync(GetCurrentUserId(), groupId, documentId);
+                var (content, fileName) = await _teamLeaderSrsService.DownloadSrsDocumentAsDocAsync(GetCurrentUserId(), groupId, documentId);
                 return File(content, "application/msword", fileName);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -1135,7 +1144,7 @@ namespace SWP391_JGMS.Controllers
             try
             {
                 var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
-                var srs = await _teamLeaderService.RegenerateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
+                var srs = await _teamLeaderSrsService.RegenerateSrsDocumentAsync(GetCurrentUserId(), groupId, documentId, dto);
                 return Ok(srs);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
