@@ -190,7 +190,11 @@ public class Program
 		// BR-054: Lecturer Group-Scoped Access service
 		builder.Services.AddScoped<ILecturerService, LecturerService>();
 		// BR-055: Team Leader Group-Scoped Access service
-		builder.Services.AddScoped<ITeamLeaderService, TeamLeaderService>();
+		builder.Services.AddScoped<ILeaderValidationService, LeaderValidationService>();
+		builder.Services.AddScoped<ITeamLeaderProjectService, TeamLeaderProjectService>();
+		builder.Services.AddScoped<ITeamLeaderRequirementService, TeamLeaderRequirementService>();
+		builder.Services.AddScoped<ITeamLeaderTaskService, TeamLeaderTaskService>();
+		builder.Services.AddScoped<ITeamLeaderSrsService, TeamLeaderSrsService>();
 		// BR-056: Team Member Self-Scoped Access service
 		builder.Services.AddScoped<ITeamMemberService, TeamMemberService>();
 		// BR-058: Admin Integration Configuration service
