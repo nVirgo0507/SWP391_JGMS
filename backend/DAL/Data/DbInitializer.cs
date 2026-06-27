@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+using DAL.Models;
 using Microsoft.AspNetCore.Identity;
 using System;
 using System.Collections.Generic;
@@ -22,6 +22,7 @@ namespace DAL.Data
             Email = "admin@swp391.edu.vn",
             Role = UserRole.admin,
             FullName = "System Administrator",
+            Phone = "0999999999",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Status = UserStatus.active
