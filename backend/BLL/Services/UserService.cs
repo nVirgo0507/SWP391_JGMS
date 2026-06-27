@@ -47,6 +47,64 @@ namespace BLL.Services
 				return null;
 			}
 
+			return GenerateJwtToken(user);
+		}
+
+
+		
+		public async Task<SsoLoginResultDTO> HandleJiraSsoAsync(AtlassianProfileDTO profile)
+		{
+			var user = await _userRepository.GetByEmailAsync(profile.Email);
+            if (user == null) 
+            {
+                return new SsoLoginResultDTO { IsNewUser = true, Profile = profile };
+            }
+
+            if (string.IsNullOrEmpty(user.JiraAccountId))
+            {
+                user.JiraAccountId = profile.AccountId;
+                await _userRepository.UpdateAsync(user);
+            }
+
+            var token = GenerateJwtToken(user);
+            return new SsoLoginResultDTO { IsNewUser = false, AccessToken = token };
+		}
+
+        public async Task<string> RegisterJiraSsoAsync(SsoRegisterDTO dto)
+        {
+			if (await _userRepository.EmailExistsAsync(dto.Email))
+				throw new Exception("Email address already exists in the system");
+
+			var normalizedPhone = PhoneHelper.NormalizePhone(dto.Phone);
+			if (!PhoneHelper.IsValidVietnamesePhone(normalizedPhone))
+				throw new Exception("Invalid Vietnamese phone number format. Expected: 0XXXXXXXXX (10 digits)");
+
+			if (await _userRepository.PhoneExistsAsync(normalizedPhone))
+				throw new Exception("Phone number already exists in the system");
+
+            var user = new User
+            {
+                Email = dto.Email,
+                FullName = dto.Name,
+                JiraAccountId = dto.JiraAccountId,
+                Phone = normalizedPhone,
+                StudentCode = dto.StudentCode,
+                Role = UserRole.student,
+                Status = UserStatus.active,
+                CreatedAt = DateTime.Now,
+                UpdatedAt = DateTime.Now
+            };
+
+            // Generate a highly secure random password since they will authenticate via Atlassian SSO
+            user.PasswordHash = _passwordHasher.HashPassword(user, Guid.NewGuid().ToString("N") + "A1@");
+
+            await _userRepository.AddAsync(user);
+
+            return GenerateJwtToken(user);
+        }
+
+        private string GenerateJwtToken(User user)
+        {
 			var claims = new List<Claim>
 			{
 				new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
@@ -69,8 +127,7 @@ namespace BLL.Services
 			);
 
 			return new JwtSecurityTokenHandler().WriteToken(token);
-		}
-
+        }
 
 		public async System.Threading.Tasks.Task RegisterAsync(RegisterDTO dto)
 		{

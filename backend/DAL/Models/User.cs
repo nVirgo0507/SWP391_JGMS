@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -21,6 +21,12 @@ public partial class User
     public string? GithubUsername { get; set; }
 
     public string? JiraAccountId { get; set; }
+
+    public string? AtlassianAccessToken { get; set; }
+
+    public string? AtlassianRefreshToken { get; set; }
+
+    public DateTime? AtlassianTokenExpiresAt { get; set; }
 
     public string? Phone { get; set; }
 

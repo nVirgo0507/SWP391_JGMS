@@ -71,6 +71,13 @@ namespace BLL.Services
             }
         }
 
+        private async Task ValidateAdminOrLeaderAsync(User user, int projectId)
+        {
+            if (user.Role == UserRole.admin) return;
+            if (await IsUserProjectLeaderAsync(user.UserId, projectId)) return;
+            throw new UnauthorizedAccessException("Only Admins and Team Leaders can configure Jira integration.");
+        }
+
         private async Task<bool> IsUserProjectLeaderAsync(int userId, int projectId)
         {
             var project = await _projectRepo.GetByIdAsync(projectId);
@@ -154,7 +161,7 @@ namespace BLL.Services
         public async Task<JiraIntegrationResponseDTO> ConfigureIntegrationAsync(int adminUserId, int projectId, ConfigureJiraIntegrationDTO dto)
         {
             var user = await ValidateUserAsync(adminUserId);
-            ValidateAdminRole(user);
+            await ValidateAdminOrLeaderAsync(user, projectId);
 
             // Validate project exists
             var project = await _projectRepo.GetByIdAsync(projectId);
@@ -250,7 +257,7 @@ namespace BLL.Services
         public async Task<JiraIntegrationResponseDTO> UpdateIntegrationAsync(int adminUserId, int projectId, ConfigureJiraIntegrationDTO dto)
         {
             var user = await ValidateUserAsync(adminUserId);
-            ValidateAdminRole(user);
+            await ValidateAdminOrLeaderAsync(user, projectId);
 
             var integration = await _jiraIntegrationRepo.GetByProjectIdAsync(projectId);
             if (integration == null)
