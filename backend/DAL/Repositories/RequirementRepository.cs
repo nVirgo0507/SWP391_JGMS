@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+using DAL.Models;
 using DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -84,6 +84,16 @@ namespace DAL.Repositories
         {
             requirement.UpdatedAt = DateTime.UtcNow;
             _context.Requirements.Update(requirement);
+            await _context.SaveChangesAsync();
+        }
+
+        public async System.Threading.Tasks.Task UpdateRangeAsync(List<Requirement> requirements)
+        {
+            foreach (var requirement in requirements)
+            {
+                requirement.UpdatedAt = DateTime.UtcNow;
+            }
+            _context.Requirements.UpdateRange(requirements);
             await _context.SaveChangesAsync();
         }
 

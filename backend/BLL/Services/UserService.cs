@@ -52,17 +52,20 @@ namespace BLL.Services
 
 
 		
-		public async Task<SsoLoginResultDTO> HandleJiraSsoAsync(AtlassianProfileDTO profile)
+		public async Task<SsoLoginResultDTO> HandleJiraSsoAsync(AtlassianProfileDTO profile, string accessToken, string refreshToken, int expiresIn)
 		{
 			var user = await _userRepository.GetByEmailAsync(profile.Email);
             if (user == null) 
             {
-                return new SsoLoginResultDTO { IsNewUser = true, Profile = profile };
+                return new SsoLoginResultDTO { IsNewUser = true, Profile = profile, AccessToken = accessToken, RefreshToken = refreshToken, ExpiresIn = expiresIn };
             }
 
             if (string.IsNullOrEmpty(user.JiraAccountId))
             {
                 user.JiraAccountId = profile.AccountId;
+                user.AtlassianAccessToken = accessToken;
+                user.AtlassianRefreshToken = refreshToken;
+                user.AtlassianTokenExpiresAt = DateTime.UtcNow.AddSeconds(expiresIn);
                 await _userRepository.UpdateAsync(user);
             }
 

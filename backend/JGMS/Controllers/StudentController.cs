@@ -864,6 +864,26 @@ namespace SWP391_JGMS.Controllers
         }
 
         /// <summary>
+        /// Bulk-import all synced Jira issues that have an assignee but no local task. Leader only.
+        /// </summary>
+        [HttpPost("groups/{groupCode}/tasks/import-assigned-from-jira")]
+        [ProducesResponseType(typeof(BulkImportTasksFromJiraResultDTO), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> ImportAssignedTasksFromJira(string groupCode)
+        {
+            try
+            {
+                var groupId = await _resolver.ResolveGroupIdAsync(groupCode);
+                var result = await _teamLeaderTaskService.ImportAssignedTasksFromJiraAsync(GetCurrentUserId(), groupId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (Exception ex) { return ex.Message.Contains("Access denied") ? Forbid() : BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
         /// Edit a task: update status, assignee, description, priority, due date. Leader only.
         /// Changes are synced back to Jira if the task is linked to a Jira issue.
         /// </summary>
