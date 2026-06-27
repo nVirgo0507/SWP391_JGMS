@@ -1,4 +1,4 @@
-﻿# Render Blueprint — one-click deploy
+# Render Blueprint — one-click deploy
 # https://render.com/docs/blueprint-spec
 services:
   - type: web
@@ -22,6 +22,14 @@ services:
         value: SWP391_JGMS_USERS
       - key: Jwt__ExpireMinutes
         value: 120
+      - key: AtlassianOAuth__ClientId
+        value: Be2cDozpCdWL3L7cpSTdDeElDuBtoIkW
+      - key: AtlassianOAuth__ClientSecret
+        sync: false  # set manually in Render dashboard
+      - key: AtlassianOAuth__RedirectUri
+        value: https://YOUR_DEPLOYED_FRONTEND_URL/student/jira-callback
+      - key: AtlassianOAuth__Scope
+        value: read:jira-work write:jira-work read:jira-user read:me offline_access
 
 databases:
   - name: jgms-db
