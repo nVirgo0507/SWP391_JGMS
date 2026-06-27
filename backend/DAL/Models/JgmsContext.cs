@@ -355,6 +355,19 @@ public partial class JgmsContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
+            entity.Property(e => e.CloudId)
+                .HasMaxLength(255)
+                .HasColumnName("cloud_id");
+            entity.Property(e => e.AccessToken)
+                .HasColumnType("text")
+                .HasColumnName("access_token");
+            entity.Property(e => e.RefreshToken)
+                .HasColumnType("text")
+                .HasColumnName("refresh_token");
+            entity.Property(e => e.TokenExpiresAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("token_expires_at");
+
             entity.HasOne(d => d.Project).WithOne(p => p.JiraIntegration)
                 .HasForeignKey<JiraIntegration>(d => d.ProjectId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -872,6 +885,16 @@ public partial class JgmsContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
+
+            entity.Property(e => e.AtlassianAccessToken)
+                .HasColumnType("text")
+                .HasColumnName("atlassian_access_token");
+            entity.Property(e => e.AtlassianRefreshToken)
+                .HasColumnType("text")
+                .HasColumnName("atlassian_refresh_token");
+            entity.Property(e => e.AtlassianTokenExpiresAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("atlassian_token_expires_at");
         });
 
         OnModelCreatingPartial(modelBuilder);
