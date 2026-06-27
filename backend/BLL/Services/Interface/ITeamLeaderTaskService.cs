@@ -54,6 +54,11 @@ namespace BLL.Services.Interface
         /// </summary>
         Task<JiraPushSyncResultDTO> SyncToJiraAsync(int userId, int groupId);
 
+        /// <summary>
+        /// Auto-import tasks from Jira that already have an assignee.
+        /// </summary>
+        Task<BulkImportTasksFromJiraResultDTO> ImportAssignedTasksFromJiraAsync(int userId, int groupId);
+
         #endregion
     }
 }

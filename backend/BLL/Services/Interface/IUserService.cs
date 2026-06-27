@@ -31,7 +31,7 @@ namespace BLL.Services.Interface
 		/// <summary>
 		/// Handles Jira SSO login process
 		/// </summary>
-		Task<SsoLoginResultDTO> HandleJiraSsoAsync(AtlassianProfileDTO profile);
+		Task<SsoLoginResultDTO> HandleJiraSsoAsync(AtlassianProfileDTO profile, string accessToken, string refreshToken, int expiresIn);
 
 		/// <summary>
 		/// Registers a user via Jira SSO

@@ -43,6 +43,11 @@ namespace DAL.Repositories.Interface
         System.Threading.Tasks.Task UpdateAsync(JiraIssue issue);
 
         /// <summary>
+        /// Update multiple Jira issues (bulk update)
+        /// </summary>
+        System.Threading.Tasks.Task UpdateRangeAsync(List<JiraIssue> issues);
+
+        /// <summary>
         /// Get last sync time for a project
         /// </summary>
         System.Threading.Tasks.Task<DateTime?> GetLastSyncTimeAsync(int projectId);
