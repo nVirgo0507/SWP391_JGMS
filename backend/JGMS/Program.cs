@@ -207,6 +207,7 @@ public class Program
 		// Jira Integration services
 		builder.Services.AddScoped<IJiraApiService, JiraApiService>();
 		builder.Services.AddScoped<IJiraIntegrationService, JiraIntegrationService>();
+		builder.Services.AddScoped<IAtlassianAuthService, AtlassianAuthService>();
 		// Github Integration services
 		builder.Services.AddScoped<IGithubIntegrationService, GithubIntegrationService>();
 		// Identifier resolver — converts group codes, emails, etc. to internal IDs

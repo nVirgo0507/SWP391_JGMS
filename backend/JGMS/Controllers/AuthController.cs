@@ -10,9 +10,12 @@ namespace SWP391_JGMS.Controllers
 	public class AuthController : ControllerBase
 	{
 		private readonly IUserService _userService;
-		public AuthController(IUserService userService)
+		private readonly IAtlassianAuthService _atlassianAuthService;
+
+		public AuthController(IUserService userService, IAtlassianAuthService atlassianAuthService)
 		{
 			_userService = userService;
+			_atlassianAuthService = atlassianAuthService;
 		}
 
 		/// <summary>
@@ -69,6 +72,45 @@ namespace SWP391_JGMS.Controllers
 				if (token == null)
 					return Unauthorized(new { message = "Invalid email or password" });
 
+				return Ok(new { accessToken = token });
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
+		}
+
+        public class JiraSsoCallbackRequest
+        {
+            public string Code { get; set; } = null!;
+        }
+
+		[HttpPost("sso/jira/callback")]
+		public async Task<IActionResult> JiraSsoCallback([FromBody] JiraSsoCallbackRequest request)
+		{
+			try
+			{
+				var tokens = await _atlassianAuthService.ExchangeCodeForTokensAsync(request.Code);
+                var profile = await _atlassianAuthService.GetAtlassianProfileAsync(tokens.AccessToken);
+                var result = await _userService.HandleJiraSsoAsync(profile, tokens.AccessToken, tokens.RefreshToken, tokens.ExpiresIn);
+
+				return Ok(result);
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
+		}
+
+		[HttpPost("sso/jira/register")]
+		public async Task<IActionResult> JiraSsoRegister([FromBody] SsoRegisterDTO dto)
+		{
+			try
+			{
+				if (!ModelState.IsValid)
+					return BadRequest(ModelState);
+
+				var token = await _userService.RegisterJiraSsoAsync(dto);
 				return Ok(new { accessToken = token });
 			}
 			catch (Exception ex)

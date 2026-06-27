@@ -1,4 +1,4 @@
-﻿namespace BLL.DTOs.Jira
+namespace BLL.DTOs.Jira
 {
     /// <summary>
     /// DTO for Jira issue information
@@ -36,6 +36,8 @@
         public string Status { get; set; } = null!;
         public List<string> Errors { get; set; } = new();
         public List<string> Warnings { get; set; } = new();
+        public bool Completed => Status?.Equals("completed", StringComparison.OrdinalIgnoreCase) ?? false;
+        public bool Failed => Status?.Equals("failed", StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
     /// <summary>
@@ -61,6 +63,7 @@
         public string IssueType { get; set; } = "Task";
         public string? Priority { get; set; }
         public string? AssigneeAccountId { get; set; }
+        public DateTime? DueDate { get; set; }
     }
 
     /// <summary>
@@ -72,6 +75,7 @@
         public string? Description { get; set; }
         public string? AssigneeAccountId { get; set; }
         public string? Priority { get; set; }
+        public DateTime? DueDate { get; set; }
     }
 
     /// <summary>

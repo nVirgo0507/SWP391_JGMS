@@ -1,4 +1,4 @@
-﻿﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Models;
@@ -20,6 +20,16 @@ public partial class JiraIntegration
     public string ApiToken { get; set; } = null!;
 
     public string JiraEmail { get; set; } = null!;
+
+    public string? AccessToken { get; set; }
+
+    public string? RefreshToken { get; set; }
+
+    public string? CloudId { get; set; }
+
+    public string ActiveUrl => !string.IsNullOrEmpty(CloudId) ? $"https://api.atlassian.com/ex/jira/{CloudId}" : JiraUrl;
+
+    public DateTime? TokenExpiresAt { get; set; }
 
     public string ProjectKey { get; set; } = null!;
 

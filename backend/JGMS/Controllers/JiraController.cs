@@ -1,4 +1,4 @@
-﻿using BLL.DTOs.Jira;
+using BLL.DTOs.Jira;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
@@ -21,17 +21,56 @@ namespace SWP391_JGMS.Controllers
     {
         private readonly IJiraIntegrationService _jiraService;
         private readonly IdentifierResolver _resolver;
+        private readonly IAtlassianAuthService _atlassianAuthService;
 
-        public JiraController(IJiraIntegrationService jiraService, IdentifierResolver resolver)
+        public JiraController(IJiraIntegrationService jiraService, IdentifierResolver resolver, IAtlassianAuthService atlassianAuthService)
         {
             _jiraService = jiraService;
             _resolver = resolver;
+            _atlassianAuthService = atlassianAuthService;
         }
 
         private int GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.Parse(userIdClaim ?? "0");
+        }
+
+        // ============================================================================
+        // Atlassian OAuth 2.0
+        // ============================================================================
+
+        [HttpGet("auth/login")]
+        [AllowAnonymous]
+        public IActionResult Login([FromQuery] string? state = null)
+        {
+            var url = _atlassianAuthService.GetAuthorizationUrl(state ?? "default");
+            return Redirect(url);
+        }
+
+        [HttpPost("auth/callback")]
+        [AllowAnonymous]
+        public async Task<IActionResult> Callback([FromBody] string code)
+        {
+            try
+            {
+                var tokens = await _atlassianAuthService.ExchangeCodeForTokensAsync(code);
+                var accountId = await _atlassianAuthService.GetUserAtlassianAccountIdAsync(tokens.AccessToken);
+                var cloudId = await _atlassianAuthService.GetAccessibleJiraCloudIdAsync(tokens.AccessToken);
+                
+                return Ok(new 
+                { 
+                    jiraAccountId = accountId, 
+                    cloudId = cloudId,
+                    accessToken = tokens.AccessToken,
+                    refreshToken = tokens.RefreshToken,
+                    expiresIn = tokens.ExpiresIn
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         // ============================================================================
@@ -56,7 +95,7 @@ namespace SWP391_JGMS.Controllers
         ///
         /// </remarks>
         [HttpPost("groups/{groupCode}/integration")]
-        [Authorize(Roles = "admin")]
+        [Authorize]
         public async Task<ActionResult<JiraIntegrationResponseDTO>> ConfigureIntegration(
             string groupCode,
             [FromBody] ConfigureJiraIntegrationDTO dto)
@@ -97,7 +136,7 @@ namespace SWP391_JGMS.Controllers
         /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
         [HttpPut("groups/{groupCode}/integration")]
-        [Authorize(Roles = "admin")]
+        [Authorize]
         public async Task<ActionResult<JiraIntegrationResponseDTO>> UpdateIntegration(
             string groupCode,
             [FromBody] ConfigureJiraIntegrationDTO dto)
@@ -118,7 +157,7 @@ namespace SWP391_JGMS.Controllers
         /// Accepts group code (e.g. "SE1234") or numeric group ID.
         /// </summary>
         [HttpDelete("groups/{groupCode}/integration")]
-        [Authorize(Roles = "admin")]
+        [Authorize]
         public async Task<ActionResult> DeleteIntegration(string groupCode)
         {
             try

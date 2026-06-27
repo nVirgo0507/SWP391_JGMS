@@ -70,6 +70,16 @@ namespace DAL.Repositories
             await _context.SaveChangesAsync();
         }
 
+        public async System.Threading.Tasks.Task UpdateRangeAsync(List<JiraIssue> issues)
+        {
+            foreach (var issue in issues)
+            {
+                issue.LastSynced = DateTime.UtcNow;
+            }
+            _context.JiraIssues.UpdateRange(issues);
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<DateTime?> GetLastSyncTimeAsync(int projectId)
         {
             return await _context.JiraIssues

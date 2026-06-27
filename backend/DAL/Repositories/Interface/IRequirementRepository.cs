@@ -1,4 +1,4 @@
-﻿using DAL.Models;
+using DAL.Models;
 
 namespace DAL.Repositories.Interface
 {
@@ -15,6 +15,7 @@ namespace DAL.Repositories.Interface
         System.Threading.Tasks.Task<int> UnlinkTasksAsync(int requirementId);
         System.Threading.Tasks.Task AddAsync(Requirement requirement);
         System.Threading.Tasks.Task UpdateAsync(Requirement requirement);
+        System.Threading.Tasks.Task UpdateRangeAsync(List<Requirement> requirements);
         System.Threading.Tasks.Task DeleteAsync(int requirementId);
     }
 }

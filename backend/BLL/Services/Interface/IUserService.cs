@@ -1,4 +1,4 @@
-﻿using BLL.DTOs;
+using BLL.DTOs;
 using DAL.Models;
 using System;
 using System.Collections.Generic;
@@ -27,6 +27,16 @@ namespace BLL.Services.Interface
 		/// Lecturers do not require student code, GitHub username, or Jira account ID.
 		/// </summary>
 		System.Threading.Tasks.Task RegisterLecturerAsync(RegisterLecturerDTO dto);
+
+		/// <summary>
+		/// Handles Jira SSO login process
+		/// </summary>
+		Task<SsoLoginResultDTO> HandleJiraSsoAsync(AtlassianProfileDTO profile, string accessToken, string refreshToken, int expiresIn);
+
+		/// <summary>
+		/// Registers a user via Jira SSO
+		/// </summary>
+		Task<string> RegisterJiraSsoAsync(SsoRegisterDTO dto);
 
 		/// <summary>
 		/// BR-007: Inactive Users Cannot Login - Validates user is active before login

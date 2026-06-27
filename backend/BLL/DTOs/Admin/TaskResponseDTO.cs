@@ -156,4 +156,15 @@ namespace BLL.DTOs.Admin
         [Required]
         public int RequirementId { get; set; }
     }
+
+    /// <summary>
+    /// Result of auto-importing assigned tasks from Jira
+    /// </summary>
+    public class BulkImportTasksFromJiraResultDTO
+    {
+        public int Imported { get; set; }
+        public int Skipped { get; set; }
+        public int Failed { get; set; }
+        public List<string> Errors { get; set; } = new();
+    }
 }
