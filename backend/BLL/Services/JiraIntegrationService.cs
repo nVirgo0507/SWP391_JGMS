@@ -26,6 +26,9 @@ namespace BLL.Services
         private readonly IGroupMemberRepository _groupMemberRepo;
         private readonly IJiraApiService _jiraApiService;
         private readonly ITokenEncryptionService _tokenEncryption;
+        private readonly IAtlassianAuthService _atlassianAuth;
+        private readonly ITaskRepository _taskRepo;
+        private readonly IPersonalTaskStatisticRepository _statRepo;
 
         public JiraIntegrationService(
             IJiraIntegrationRepository jiraIntegrationRepo,
@@ -36,7 +39,10 @@ namespace BLL.Services
             IStudentGroupRepository groupRepo,
             IGroupMemberRepository groupMemberRepo,
             IJiraApiService jiraApiService,
-            ITokenEncryptionService tokenEncryption)
+            ITokenEncryptionService tokenEncryption,
+            IAtlassianAuthService atlassianAuth,
+            ITaskRepository taskRepo,
+            IPersonalTaskStatisticRepository statRepo)
         {
             _jiraIntegrationRepo = jiraIntegrationRepo;
             _jiraIssueRepo = jiraIssueRepo;
@@ -47,6 +53,9 @@ namespace BLL.Services
             _groupMemberRepo = groupMemberRepo;
             _jiraApiService = jiraApiService;
             _tokenEncryption = tokenEncryption;
+            _atlassianAuth = atlassianAuth;
+            _taskRepo = taskRepo;
+            _statRepo = statRepo;
         }
 
         // ============================================================================
@@ -172,7 +181,7 @@ namespace BLL.Services
 
             // BR-023: Validate Jira Credentials
             // Test connection before saving
-            var isConnected = await _jiraApiService.TestConnectionAsync(dto.JiraUrl, dto.JiraEmail, dto.ApiToken);
+            var isConnected = await _jiraApiService.TestConnectionAsync(dto.CloudId, "oauth@placeholder.com", dto.AccessToken);
             if (!isConnected)
             {
                 throw new Exception("Invalid Jira credentials. Please check your API token and email.");
@@ -182,7 +191,7 @@ namespace BLL.Services
             JiraProjectDTO jiraProject;
             try
             {
-                jiraProject = await _jiraApiService.GetProjectAsync(dto.JiraUrl, dto.JiraEmail, dto.ApiToken, dto.ProjectKey);
+                jiraProject = await _jiraApiService.GetProjectAsync(dto.CloudId, "oauth@placeholder.com", dto.AccessToken, dto.ProjectKey);
             }
             catch (Exception ex)
             {
@@ -200,9 +209,13 @@ namespace BLL.Services
             var integration = new JiraIntegration
             {
                 ProjectId = projectId,
-                JiraUrl = dto.JiraUrl.TrimEnd('/'),
-                JiraEmail = dto.JiraEmail,
-                ApiToken = EncryptToken(dto.ApiToken),
+                JiraUrl = "oauth-placeholder",
+                JiraEmail = "oauth-placeholder",
+                ApiToken = "oauth-placeholder",
+                CloudId = dto.CloudId,
+                AccessToken = EncryptToken(dto.AccessToken),
+                RefreshToken = string.IsNullOrEmpty(dto.RefreshToken) ? null : EncryptToken(dto.RefreshToken),
+                TokenExpiresAt = dto.ExpiresIn.HasValue ? DateTime.UtcNow.AddSeconds(dto.ExpiresIn.Value) : null,
                 ProjectKey = dto.ProjectKey,
                 SyncStatus = SyncStatus.pending
             };
@@ -214,7 +227,7 @@ namespace BLL.Services
                 IntegrationId = integration.IntegrationId,
                 ProjectId = integration.ProjectId,
                 ProjectName = project.ProjectName,
-                JiraUrl = integration.JiraUrl,
+                JiraUrl = integration.ActiveUrl,
                 JiraEmail = integration.JiraEmail,
                 ProjectKey = integration.ProjectKey,
                 LastSync = integration.LastSync,
@@ -244,7 +257,7 @@ namespace BLL.Services
                 IntegrationId = integration.IntegrationId,
                 ProjectId = integration.ProjectId,
                 ProjectName = integration.Project.ProjectName,
-                JiraUrl = integration.JiraUrl,
+                JiraUrl = integration.ActiveUrl,
                 JiraEmail = integration.JiraEmail,
                 ProjectKey = integration.ProjectKey,
                 LastSync = integration.LastSync,
@@ -266,16 +279,17 @@ namespace BLL.Services
             }
 
             // Test new connection
-            var isConnected = await _jiraApiService.TestConnectionAsync(dto.JiraUrl, dto.JiraEmail, dto.ApiToken);
+            var isConnected = await _jiraApiService.TestConnectionAsync(dto.CloudId, "oauth@placeholder.com", dto.AccessToken);
             if (!isConnected)
             {
                 throw new Exception("Invalid Jira credentials. Please check your API token and email.");
             }
 
             // Update integration
-            integration.JiraUrl = dto.JiraUrl.TrimEnd('/');
-            integration.JiraEmail = dto.JiraEmail;
-            integration.ApiToken = EncryptToken(dto.ApiToken);
+            integration.CloudId = dto.CloudId;
+            integration.AccessToken = EncryptToken(dto.AccessToken);
+            integration.RefreshToken = string.IsNullOrEmpty(dto.RefreshToken) ? null : EncryptToken(dto.RefreshToken);
+            integration.TokenExpiresAt = dto.ExpiresIn.HasValue ? DateTime.UtcNow.AddSeconds(dto.ExpiresIn.Value) : null;
             integration.ProjectKey = dto.ProjectKey;
 
             await _jiraIntegrationRepo.UpdateAsync(integration);
@@ -285,7 +299,7 @@ namespace BLL.Services
                 IntegrationId = integration.IntegrationId,
                 ProjectId = integration.ProjectId,
                 ProjectName = integration.Project.ProjectName,
-                JiraUrl = integration.JiraUrl,
+                JiraUrl = integration.ActiveUrl,
                 JiraEmail = integration.JiraEmail,
                 ProjectKey = integration.ProjectKey,
                 LastSync = integration.LastSync,
@@ -320,8 +334,28 @@ namespace BLL.Services
                 throw new Exception("Jira integration not found");
             }
 
-            var decryptedToken = DecryptToken(integration.ApiToken);
-            var isConnected = await _jiraApiService.TestConnectionAsync(integration.JiraUrl, integration.JiraEmail, decryptedToken);
+            // Refresh token if expired
+            if (!string.IsNullOrEmpty(integration.CloudId) && 
+                !string.IsNullOrEmpty(integration.RefreshToken) && 
+                integration.TokenExpiresAt.HasValue && 
+                integration.TokenExpiresAt.Value <= DateTime.UtcNow.AddMinutes(5))
+            {
+                var refreshResult = await _atlassianAuth.RefreshTokensAsync(DecryptToken(integration.RefreshToken));
+                integration.AccessToken = EncryptToken(refreshResult.AccessToken);
+                if (!string.IsNullOrEmpty(refreshResult.RefreshToken))
+                {
+                    integration.RefreshToken = EncryptToken(refreshResult.RefreshToken);
+                }
+                integration.TokenExpiresAt = DateTime.UtcNow.AddSeconds(refreshResult.ExpiresIn);
+                await _jiraIntegrationRepo.UpdateAsync(integration);
+            }
+
+            string url = !string.IsNullOrEmpty(integration.CloudId) 
+                ? $"https://api.atlassian.com/ex/jira/{integration.CloudId}" 
+                : integration.ActiveUrl;
+            string token = !string.IsNullOrEmpty(integration.AccessToken) ? DecryptToken(integration.AccessToken) : DecryptToken(integration.ApiToken);
+
+            var isConnected = await _jiraApiService.TestConnectionAsync(url, "oauth@placeholder.com", token);
 
             string message;
             string? projectName = null;
@@ -332,7 +366,7 @@ namespace BLL.Services
                 try
                 {
                     var jiraProject = await _jiraApiService.GetProjectAsync(
-                        integration.JiraUrl, integration.JiraEmail, decryptedToken, integration.ProjectKey);
+                        url, "oauth@placeholder.com", token, integration.ProjectKey);
                     projectName = jiraProject.Name;
                     projectKey = jiraProject.Key;
                     message = $"Successfully connected to Jira project: {projectName}";
@@ -415,25 +449,72 @@ namespace BLL.Services
 
             try
             {
+                // Refresh token if expired
+                if (!string.IsNullOrEmpty(integration.CloudId) && 
+                    !string.IsNullOrEmpty(integration.RefreshToken) && 
+                    integration.TokenExpiresAt.HasValue && 
+                    integration.TokenExpiresAt.Value <= DateTime.UtcNow.AddMinutes(5))
+                {
+                    var refreshResult = await _atlassianAuth.RefreshTokensAsync(DecryptToken(integration.RefreshToken));
+                    integration.AccessToken = EncryptToken(refreshResult.AccessToken);
+                    if (!string.IsNullOrEmpty(refreshResult.RefreshToken))
+                    {
+                        integration.RefreshToken = EncryptToken(refreshResult.RefreshToken);
+                    }
+                    integration.TokenExpiresAt = DateTime.UtcNow.AddSeconds(refreshResult.ExpiresIn);
+                }
+
                 // Update sync status
                 integration.SyncStatus = SyncStatus.syncing;
                 await _jiraIntegrationRepo.UpdateAsync(integration);
 
-                var decryptedToken = DecryptToken(integration.ApiToken);
+                string url = !string.IsNullOrEmpty(integration.CloudId) 
+                    ? $"https://api.atlassian.com/ex/jira/{integration.CloudId}" 
+                    : integration.ActiveUrl;
+                string token = !string.IsNullOrEmpty(integration.AccessToken) ? DecryptToken(integration.AccessToken) : DecryptToken(integration.ApiToken);
+
                 var jiraIssues = await _jiraApiService.GetProjectIssuesAsync(
-                    integration.JiraUrl, integration.JiraEmail, decryptedToken, integration.ProjectKey);
+                    url, "oauth@placeholder.com", token, integration.ProjectKey);
 
                 result.TotalIssues = jiraIssues.Count;
+
+                var issuesToAdd = new List<JiraIssue>();
+                var issuesToUpdate = new List<JiraIssue>();
+                var requirementsToUpdate = new List<Requirement>();
+
+                // BULK LOAD to eliminate N+1 queries
+                var existingIssuesList = await _jiraIssueRepo.GetByProjectIdAsync(projectId);
+                var existingIssuesDict = existingIssuesList
+                    .GroupBy(i => i.JiraId)
+                    .ToDictionary(g => g.Key, g => g.First());
+                
+                var existingRequirementsList = await _requirementRepo.GetByProjectIdAsync(projectId);
+                var requirementsDict = existingRequirementsList
+                    .Where(r => r.JiraIssueId.HasValue)
+                    .GroupBy(r => r.JiraIssueId.Value)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                
+                var existingTasksList = await _taskRepo.GetTasksByProjectIdAsync(projectId);
+                var tasksDict = existingTasksList
+                    .Where(t => t.JiraIssueId.HasValue)
+                    .GroupBy(t => t.JiraIssueId!.Value)
+                    .ToDictionary(g => g.Key, g => g.First());
+                var tasksToUpdate = new HashSet<DAL.Models.Task>();
+                
+                var allUsers = await _userRepo.GetAllAsync();
+                var usersByJiraId = allUsers
+                    .Where(u => !string.IsNullOrEmpty(u.JiraAccountId))
+                    .GroupBy(u => u.JiraAccountId!)
+                    .ToDictionary(g => g.Key, g => g.First());
+                var usersToRecalculateStats = new HashSet<int>();
 
                 foreach (var jiraIssue in jiraIssues)
                 {
                     try
                     {
-                        var existingIssue = await _jiraIssueRepo.GetByJiraIdAsync(jiraIssue.JiraId);
-
-                        if (existingIssue == null)
+                        if (!existingIssuesDict.TryGetValue(jiraIssue.JiraId, out var existingIssue))
                         {
-                            // Create new issue
                             var newIssue = new JiraIssue
                             {
                                 ProjectId = projectId,
@@ -442,9 +523,7 @@ namespace BLL.Services
                                 IssueType = jiraIssue.IssueType,
                                 Summary = jiraIssue.Summary,
                                 Description = jiraIssue.Description,
-                                Priority = !string.IsNullOrEmpty(jiraIssue.Priority)
-                                    ? Enum.Parse<JiraPriority>(jiraIssue.Priority.ToLower())
-                                    : (JiraPriority?)null,
+                                Priority = !string.IsNullOrEmpty(jiraIssue.Priority) && Enum.TryParse<JiraPriority>(jiraIssue.Priority.ToLower(), out var p1) ? p1 : (JiraPriority?)null,
                                 Status = jiraIssue.Status,
                                 AssigneeJiraId = jiraIssue.AssigneeJiraId,
                                 SprintId = jiraIssue.SprintId,
@@ -454,51 +533,118 @@ namespace BLL.Services
                                 UpdatedDate = jiraIssue.UpdatedDate
                             };
 
-                            await _jiraIssueRepo.AddAsync(newIssue);
-                            await SyncLinkedRequirementFromIssueAsync(newIssue);
+                            issuesToAdd.Add(newIssue);
                             result.NewIssues++;
                         }
                         else
                         {
                             var previousProjectId = existingIssue.ProjectId;
 
-                            // Keep issue ownership aligned with the project currently being synced.
-                            // This prevents "updated but not visible in this project" confusion when
-                            // legacy rows were previously attached to another project.
                             if (existingIssue.ProjectId != projectId)
                             {
                                 existingIssue.ProjectId = projectId;
-                                result.Warnings.Add(
-                                    $"Issue {jiraIssue.IssueKey} was reassigned from project {previousProjectId} to {projectId} during sync.");
+                                result.Warnings.Add($"Issue {jiraIssue.IssueKey} was reassigned from project {previousProjectId} to {projectId} during sync.");
                             }
 
-                            // Update existing issue
                             existingIssue.IssueKey = jiraIssue.IssueKey;
                             existingIssue.JiraId = jiraIssue.JiraId;
                             existingIssue.IssueType = jiraIssue.IssueType;
                             existingIssue.Summary = jiraIssue.Summary;
                             existingIssue.Description = jiraIssue.Description;
                             existingIssue.Status = jiraIssue.Status;
-                            existingIssue.Priority = !string.IsNullOrEmpty(jiraIssue.Priority)
-                                ? Enum.Parse<JiraPriority>(jiraIssue.Priority.ToLower())
-                                : (JiraPriority?)null;
+                            existingIssue.Priority = !string.IsNullOrEmpty(jiraIssue.Priority) && Enum.TryParse<JiraPriority>(jiraIssue.Priority.ToLower(), out var p2) ? p2 : (JiraPriority?)null;
                             existingIssue.AssigneeJiraId = jiraIssue.AssigneeJiraId;
                             existingIssue.SprintId = jiraIssue.SprintId;
                             existingIssue.SprintName = jiraIssue.SprintName;
                             existingIssue.SprintState = jiraIssue.SprintState;
                             existingIssue.UpdatedDate = jiraIssue.UpdatedDate;
 
-                            await _jiraIssueRepo.UpdateAsync(existingIssue);
-                            await SyncLinkedRequirementFromIssueAsync(existingIssue);
+                            issuesToUpdate.Add(existingIssue);
                             result.UpdatedIssues++;
+
+                            if (requirementsDict.TryGetValue(existingIssue.JiraIssueId, out var requirement))
+                            {
+                                requirement.Title = existingIssue.Summary;
+                                requirement.Description = existingIssue.Description;
+                                if (existingIssue.Priority.HasValue)
+                                    requirement.Priority = MapJiraPriorityToRequirementPriority(existingIssue.Priority.Value);
+                                if (requirement.ProjectId != existingIssue.ProjectId)
+                                    requirement.ProjectId = existingIssue.ProjectId;
+                                
+                                requirementsToUpdate.Add(requirement);
+                            }
+                            if (tasksDict.TryGetValue(existingIssue.JiraIssueId, out var task))
+                            {
+                                bool taskChanged = false;
+                                
+                                // Auto-sync Assignee from Jira to JGMS
+                                if (!string.IsNullOrEmpty(existingIssue.AssigneeJiraId) && 
+                                    usersByJiraId.TryGetValue(existingIssue.AssigneeJiraId, out var mappedUser))
+                                {
+                                    if (task.AssignedTo != mappedUser.UserId)
+                                    {
+                                        if (task.AssignedTo.HasValue) usersToRecalculateStats.Add(task.AssignedTo.Value);
+                                        task.AssignedTo = mappedUser.UserId;
+                                        usersToRecalculateStats.Add(mappedUser.UserId);
+                                        taskChanged = true;
+                                    }
+                                }
+                                else if (string.IsNullOrEmpty(existingIssue.AssigneeJiraId) && task.AssignedTo.HasValue)
+                                {
+                                    usersToRecalculateStats.Add(task.AssignedTo.Value);
+                                    task.AssignedTo = null;
+                                    taskChanged = true;
+                                }
+
+                                if (task.Title != existingIssue.Summary) { task.Title = existingIssue.Summary; taskChanged = true; }
+                                if (task.Description != existingIssue.Description) { task.Description = existingIssue.Description; taskChanged = true; }
+                                
+                                var newStatus = existingIssue.Status?.ToLower() switch
+                                {
+                                    "to do" or "todo" or "to_do" => DAL.Models.TaskStatus.todo,
+                                    "in progress" or "in_progress" => DAL.Models.TaskStatus.in_progress,
+                                    "done" or "completed" => DAL.Models.TaskStatus.done,
+                                    _ => DAL.Models.TaskStatus.todo
+                                };
+                                if (task.Status != newStatus) 
+                                { 
+                                    task.Status = newStatus; 
+                                    if (newStatus == DAL.Models.TaskStatus.done && task.CompletedAt == null) task.CompletedAt = DateTime.UtcNow;
+                                    else if (newStatus != DAL.Models.TaskStatus.done) task.CompletedAt = null;
+                                    taskChanged = true; 
+                                }
+
+                                if (existingIssue.Priority.HasValue)
+                                {
+                                    var newPriority = MapJiraPriorityToRequirementPriority(existingIssue.Priority.Value);
+                                    if (task.Priority != newPriority) { task.Priority = newPriority; taskChanged = true; }
+                                }
+
+                                if (taskChanged)
+                                {
+                                    tasksToUpdate.Add(task);
+                                    if (task.AssignedTo.HasValue) usersToRecalculateStats.Add(task.AssignedTo.Value);
+                                }
+                            }
+
                         }
                     }
                     catch (Exception ex)
                     {
                         result.FailedIssues++;
-                        result.Errors.Add($"Failed to sync issue {jiraIssue.IssueKey}: {ex.Message}");
+                        result.Errors.Add($"Failed to process issue {jiraIssue.IssueKey}: {ex.Message}");
                     }
                 }
+
+                if (issuesToAdd.Any()) await _jiraIssueRepo.AddRangeAsync(issuesToAdd);
+                if (issuesToUpdate.Any()) await _jiraIssueRepo.UpdateRangeAsync(issuesToUpdate);
+                if (requirementsToUpdate.Any()) await _requirementRepo.UpdateRangeAsync(requirementsToUpdate);
+                if (tasksToUpdate.Any()) foreach(var t in tasksToUpdate) { await _taskRepo.UpdateAsync(t); }
+                foreach(var uId in usersToRecalculateStats)
+                {
+                    await _statRepo.RecalculateForUserProjectAsync(uId, projectId);
+                }
+
 
                 // Update integration
                 integration.LastSync = DateTime.UtcNow;
@@ -507,11 +653,10 @@ namespace BLL.Services
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"\n\n[JIRA SYNC ERROR] {ex.ToString()}\n\n");
                 integration.SyncStatus = SyncStatus.failed;
                 await _jiraIntegrationRepo.UpdateAsync(integration);
-
-                result.Status = "failed";
-                result.Errors.Add($"Sync failed: {ex.Message}");
+                throw new Exception($"Jira sync failed: {ex.Message}");
             }
 
             return result;

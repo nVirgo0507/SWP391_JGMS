@@ -1,4 +1,4 @@
-﻿﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace BLL.DTOs.Jira
 {
@@ -7,17 +7,15 @@ namespace BLL.DTOs.Jira
     /// </summary>
     public class ConfigureJiraIntegrationDTO
     {
-        [Required(ErrorMessage = "Jira URL is required")]
-        [Url(ErrorMessage = "Invalid Jira URL format")]
-        public string JiraUrl { get; set; } = null!;
+        [Required(ErrorMessage = "Cloud ID is required")]
+        public string CloudId { get; set; } = null!;
 
-        [Required(ErrorMessage = "Jira email is required")]
-        [EmailAddress(ErrorMessage = "Invalid email format")]
-        public string JiraEmail { get; set; } = null!;
+        [Required(ErrorMessage = "Access token is required")]
+        public string AccessToken { get; set; } = null!;
 
-        [Required(ErrorMessage = "API token is required")]
-        [MinLength(10, ErrorMessage = "API token must be at least 10 characters")]
-        public string ApiToken { get; set; } = null!;
+        public string? RefreshToken { get; set; }
+        
+        public int? ExpiresIn { get; set; }
 
         [Required(ErrorMessage = "Project key is required")]
         [RegularExpression(@"^[A-Z][A-Z0-9_]*$", ErrorMessage = "Project key must be uppercase letters, numbers, or underscores")]

@@ -38,7 +38,7 @@ namespace BLL.Services
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
         private readonly IPersonalTaskStatisticRepository _personalTaskStatisticRepository;
-        private readonly byte[] _encryptionKey;
+        private readonly ITokenEncryptionService _tokenEncryption;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
         private readonly IAiChatService _aiChatService;
 
@@ -58,7 +58,8 @@ namespace BLL.Services
             IPersonalTaskStatisticRepository personalTaskStatisticRepository,
             IConfiguration configuration,
             ISrsDocumentRepository srsDocumentRepository,
-            IAiChatService aiChatService)
+            IAiChatService aiChatService,
+            ITokenEncryptionService tokenEncryption)
         {
             _leaderValidationService = leaderValidationService;
             _memberRepository = memberRepository;
@@ -75,9 +76,7 @@ namespace BLL.Services
             _personalTaskStatisticRepository = personalTaskStatisticRepository;
             _srsDocumentRepository = srsDocumentRepository;
             _aiChatService = aiChatService;
-            // Derive the same stable AES-GCM key as JiraIntegrationService
-            var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
-            _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
+            _tokenEncryption = tokenEncryption;
         }
 
         /// <summary>
@@ -170,19 +169,20 @@ namespace BLL.Services
                         {
                             // Update Jira issue summary/description if changed
                             await _jiraApiService.UpdateIssueAsync(
-                                integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                 jiraIssue.IssueKey,
                                 new UpdateJiraIssueDTO
                                 {
                                     Summary = dto.Title,
                                     Description = dto.Description,
-                                    Priority = TeamLeaderHelper.ToJiraPriority(dto.Priority)
+                                    Priority = TeamLeaderHelper.ToJiraPriority(dto.Priority),
+                                    DueDate = dto.DueDate.HasValue ? dto.DueDate.Value.ToDateTime(TimeOnly.MinValue) : null
                                 });
 
                             // Move to sprint if sprintId provided
                             if (dto.SprintId.HasValue && dto.SprintId.Value > 0)
                                 await _jiraApiService.MoveIssueToSprintAsync(
-                                    integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                    GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                     jiraIssue.IssueKey, dto.SprintId.Value);
                         }
                         catch { /* Jira sync failure is non-blocking */ }
@@ -250,13 +250,27 @@ namespace BLL.Services
             };
             }
 
+            int? finalAssignee = dto.AssignedTo;
+            if (!finalAssignee.HasValue && !string.IsNullOrEmpty(jiraIssue.AssigneeJiraId))
+            {
+                var mappedUser = await _userRepository.GetByJiraAccountIdAsync(jiraIssue.AssigneeJiraId);
+                if (mappedUser != null)
+                {
+                    // Only auto-assign if they are part of the group
+                    if (await _memberRepository.IsMemberOfGroupAsync(groupId, mappedUser.UserId))
+                    {
+                        finalAssignee = mappedUser.UserId;
+                    }
+                }
+            }
+
             var task = new DAL.Models.Task
             {
                 Title = dto.TitleOverride ?? jiraIssue.Summary,
                 Description = jiraIssue.Description,
                 RequirementId = linkedRequirement?.RequirementId,
                 JiraIssueId = jiraIssue.JiraIssueId,
-                AssignedTo = dto.AssignedTo,
+                AssignedTo = finalAssignee,
                 DueDate = dto.DueDate,
                 Status = DAL.Models.TaskStatus.todo,
                 Priority = priority
@@ -285,7 +299,7 @@ namespace BLL.Services
                     }
 
                     await _jiraApiService.UpdateIssueAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         jiraIssue.IssueKey,
                         new UpdateJiraIssueDTO
                         {
@@ -296,14 +310,14 @@ namespace BLL.Services
                     // Move to sprint if sprintId provided and > 0
                     if (dto.SprintId.HasValue && dto.SprintId.Value > 0)
                         await _jiraApiService.MoveIssueToSprintAsync(
-                            integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                            GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                             jiraIssue.IssueKey, dto.SprintId.Value);
 
                     // Move to backlog if sprintId == 0 explicitly passed
                     // (null means "don't touch sprint", 0 means "move to backlog")
                     else if (dto.SprintId.HasValue && dto.SprintId.Value == 0)
                         await _jiraApiService.MoveIssueToBacklogAsync(
-                            integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                            GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                             jiraIssue.IssueKey);
                 }
                 catch { /* Jira sync failure is non-blocking */ }
@@ -378,22 +392,35 @@ namespace BLL.Services
                     {
                         try
                         {
+                            string? assigneeJiraId = null;
+                            if (dto.AssignedTo.HasValue)
+                            {
+                                var assigneeUser = await _userRepository.GetByIdAsync(dto.AssignedTo.Value);
+                                if (assigneeUser != null && !string.IsNullOrEmpty(assigneeUser.JiraAccountId))
+                                {
+                                    assigneeJiraId = assigneeUser.JiraAccountId;
+                                    jiraIssue.AssigneeJiraId = assigneeJiraId;
+                                }
+                            }
+
                             // Update fields
                             await _jiraApiService.UpdateIssueAsync(
-                                integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                 jiraIssue.IssueKey,
                                 new UpdateJiraIssueDTO
                                 {
                                     Summary = dto.Title,
                                     Description = dto.Description,
-                                    Priority = TeamLeaderHelper.ToJiraPriority(dto.Priority)
+                                    Priority = TeamLeaderHelper.ToJiraPriority(dto.Priority),
+                                    AssigneeAccountId = assigneeJiraId,
+                                    DueDate = dto.DueDate.HasValue ? dto.DueDate.Value.ToDateTime(TimeOnly.MinValue) : null
                                 });
 
                             // Transition status if changed
                             if (dto.Status != null)
                             {
                                 var transitions = await _jiraApiService.GetAvailableTransitionsAsync(
-                                    integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                    GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                     jiraIssue.IssueKey);
 
                                 var targetName = dto.Status.ToLower() switch
@@ -409,7 +436,7 @@ namespace BLL.Services
 
                                 if (transition != null)
                                     await _jiraApiService.TransitionIssueAsync(
-                                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                         jiraIssue.IssueKey, transition.Id);
 
                                 // Update local cache
@@ -452,6 +479,37 @@ namespace BLL.Services
                 await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(previousAssignee.Value, project.ProjectId);
             }
             await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(memberId, project.ProjectId);
+
+            // Sync assignment back to Jira
+            if (task.JiraIssueId.HasValue)
+            {
+                var jiraIssue = await _jiraIssueRepository.GetByIdAsync(task.JiraIssueId.Value);
+                if (jiraIssue != null)
+                {
+                    var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+                    if (integration != null)
+                    {
+                        var memberUser = await _userRepository.GetByIdAsync(memberId);
+                        if (memberUser != null && !string.IsNullOrEmpty(memberUser.JiraAccountId))
+                        {
+                            try
+                            {
+                                await _jiraApiService.UpdateIssueAsync(
+                                    GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
+                                    jiraIssue.IssueKey,
+                                    new UpdateJiraIssueDTO
+                                    {
+                                        AssigneeAccountId = memberUser.JiraAccountId
+                                    });
+
+                                jiraIssue.AssigneeJiraId = memberUser.JiraAccountId;
+                                await _jiraIssueRepository.UpdateAsync(jiraIssue);
+                            }
+                            catch { /* Jira sync failure is non-blocking */ }
+                        }
+                    }
+                }
+            }
         }
 
         public async System.Threading.Tasks.Task DeleteTaskAsync(int userId, int groupId, int taskId)
@@ -479,7 +537,7 @@ namespace BLL.Services
                         try
                         {
                             await _jiraApiService.DeleteIssueAsync(
-                                integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                 jiraIssue.IssueKey);
                         }
                         catch { /* non-blocking */ }
@@ -515,11 +573,11 @@ namespace BLL.Services
 
             if (sprintId == 0)
                 await _jiraApiService.MoveIssueToBacklogAsync(
-                    integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                    GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                     jiraIssue.IssueKey);
             else
                 await _jiraApiService.MoveIssueToSprintAsync(
-                    integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                    GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                     jiraIssue.IssueKey, sprintId);
 
             var saved = await _taskRepository.GetByIdAsync(taskId);
@@ -563,7 +621,7 @@ namespace BLL.Services
                         try
                         {
                             await _jiraApiService.CreateIssueLinkAsync(
-                                integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                 taskJiraIssue.IssueKey, reqJiraIssue.IssueKey, "Relates");
                         }
                         catch { /* non-blocking */ }
@@ -598,16 +656,20 @@ namespace BLL.Services
 
             // ── Verify connection first ──────────────────────────────────────────
             var connected = await _jiraApiService.TestConnectionAsync(
-                integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey));
+                GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token);
             if (!connected)
-                throw new Exception($"Cannot connect to Jira at '{integration.JiraUrl}'. Check the API token and email in the integration config.");
+                throw new Exception($"Cannot connect to Jira at '{integration.ActiveUrl}'. Check the API token and email in the integration config.");
+
+            // ── Batch Load ───────────────────────────────────────────────────────
+            var existingIssues = await _jiraIssueRepository.GetByProjectIdAsync(project.ProjectId);
+            var issuesDict = existingIssues.ToDictionary(i => i.JiraIssueId);
+            var issuesToUpdate = new HashSet<JiraIssue>();
 
             // ── Sync Tasks ───────────────────────────────────────────────────────
             var tasks = await _taskRepository.GetTasksByProjectIdAsync(project.ProjectId);
             foreach (var task in tasks.Where(t => t.JiraIssueId.HasValue))
             {
-                var jiraIssue = await _jiraIssueRepository.GetByIdAsync(task.JiraIssueId!.Value);
-                if (jiraIssue == null)
+                if (!issuesDict.TryGetValue(task.JiraIssueId!.Value, out var jiraIssue))
                 {
                     result.Warnings.Add($"Task {task.TaskId} '{task.Title}': JiraIssueId {task.JiraIssueId} not found locally — skipped.");
                     continue;
@@ -617,7 +679,7 @@ namespace BLL.Services
                 try
                 {
                     await _jiraApiService.GetIssueAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         jiraIssue.IssueKey);
                 }
                 catch
@@ -630,20 +692,32 @@ namespace BLL.Services
 
                 try
                 {
+                    string? assigneeJiraId = null;
+                    if (task.AssignedTo.HasValue)
+                    {
+                        var assigneeUser = await _userRepository.GetByIdAsync(task.AssignedTo.Value);
+                        if (assigneeUser != null && !string.IsNullOrEmpty(assigneeUser.JiraAccountId))
+                        {
+                            assigneeJiraId = assigneeUser.JiraAccountId;
+                        }
+                    }
+
                     // Push field updates
                     await _jiraApiService.UpdateIssueAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         jiraIssue.IssueKey,
                         new UpdateJiraIssueDTO
                         {
                             Summary = task.Title,
                             Description = task.Description,
-                            Priority = TeamLeaderHelper.ToJiraPriority(task.Priority)
+                            Priority = TeamLeaderHelper.ToJiraPriority(task.Priority),
+                            AssigneeAccountId = assigneeJiraId,
+                            DueDate = task.DueDate.HasValue ? task.DueDate.Value.ToDateTime(TimeOnly.MinValue) : null
                         });
 
                     // Push status transition
                     var transitions = await _jiraApiService.GetAvailableTransitionsAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         jiraIssue.IssueKey);
 
                     var targetStatusName = task.Status switch
@@ -658,7 +732,7 @@ namespace BLL.Services
 
                     if (transition != null)
                         await _jiraApiService.TransitionIssueAsync(
-                            integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                            GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                             jiraIssue.IssueKey, transition.Id);
                     else
                         result.Warnings.Add($"Task {task.TaskId} '{task.Title}': no Jira transition found for status '{targetStatusName}' — status not synced.");
@@ -672,7 +746,7 @@ namespace BLL.Services
                             try
                             {
                                 await _jiraApiService.UpdateIssueAsync(
-                                    integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                    GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                     jiraIssue.IssueKey,
                                     new UpdateJiraIssueDTO { AssigneeAccountId = assignee.JiraAccountId });
                             }
@@ -689,7 +763,7 @@ namespace BLL.Services
                     jiraIssue.Summary = task.Title;
                     jiraIssue.Description = task.Description;
                     jiraIssue.Status = targetStatusName;
-                    await _jiraIssueRepository.UpdateAsync(jiraIssue);
+                    issuesToUpdate.Add(jiraIssue);
 
                     result.TasksSynced++;
                 }
@@ -704,8 +778,7 @@ namespace BLL.Services
             var requirements = await _requirementRepository.GetByProjectIdAsync(project.ProjectId);
             foreach (var req in requirements.Where(r => r.JiraIssueId.HasValue))
             {
-                var jiraIssue = await _jiraIssueRepository.GetByIdAsync(req.JiraIssueId!.Value);
-                if (jiraIssue == null)
+                if (!issuesDict.TryGetValue(req.JiraIssueId!.Value, out var jiraIssue))
                 {
                     result.Warnings.Add($"Requirement {req.RequirementId} '{req.RequirementCode}': JiraIssueId {req.JiraIssueId} not found locally — skipped.");
                     continue;
@@ -715,7 +788,7 @@ namespace BLL.Services
                 try
                 {
                     await _jiraApiService.GetIssueAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         jiraIssue.IssueKey);
                 }
                 catch
@@ -729,7 +802,7 @@ namespace BLL.Services
                 try
                 {
                     await _jiraApiService.UpdateIssueAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         jiraIssue.IssueKey,
                         new UpdateJiraIssueDTO
                         {
@@ -741,7 +814,7 @@ namespace BLL.Services
                     // Update local cache
                     jiraIssue.Summary = req.Title;
                     jiraIssue.Description = req.Description;
-                    await _jiraIssueRepository.UpdateAsync(jiraIssue);
+                    issuesToUpdate.Add(jiraIssue);
 
                     result.RequirementsSynced++;
                 }
@@ -750,6 +823,11 @@ namespace BLL.Services
                     result.RequirementsFailed++;
                     result.Errors.Add($"Requirement {req.RequirementId} '{req.RequirementCode}' ({jiraIssue.IssueKey}): {ex.Message}");
                 }
+            }
+
+            if (issuesToUpdate.Any())
+            {
+                await _jiraIssueRepository.UpdateRangeAsync(issuesToUpdate.ToList());
             }
 
             return result;
@@ -787,5 +865,131 @@ namespace BLL.Services
                 _ => DAL.Models.TaskStatus.todo
             };
 
+
+        public async Task<BulkImportTasksFromJiraResultDTO> ImportAssignedTasksFromJiraAsync(int userId, int groupId)
+        {
+            var group = await _groupRepository.GetByIdAsync(groupId);
+            if (group == null) throw new Exception("Group not found");
+
+            await _leaderValidationService.ValidateLeaderAccessAsync(userId, groupId);
+
+            var project = await _projectRepository.GetByGroupIdAsync(groupId);
+            if (project == null) throw new Exception("No project found for this group");
+
+            var integration = await _jiraIntegrationRepository.GetByProjectIdAsync(project.ProjectId);
+            if (integration == null || integration.SyncStatus != SyncStatus.success)
+                throw new Exception("Jira integration must be configured and synced first");
+
+            var allIssues = await _jiraIssueRepository.GetByProjectIdAsync(project.ProjectId);
+            if (!allIssues.Any())
+                throw new Exception("No Jira issues found. Run a sync first.");
+
+            var existingTasks = await _taskRepository.GetTasksByProjectIdAsync(project.ProjectId);
+            var alreadyLinkedIssueIds = existingTasks
+                .Where(t => t.JiraIssueId.HasValue)
+                .Select(t => t.JiraIssueId!.Value)
+                .ToHashSet();
+
+            var allUsers = await _userRepository.GetAllAsync();
+            var usersByJiraId = allUsers
+                .Where(u => !string.IsNullOrEmpty(u.JiraAccountId))
+                .GroupBy(u => u.JiraAccountId!)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var result = new BulkImportTasksFromJiraResultDTO();
+            var usersToRecalculateStats = new HashSet<int>();
+
+            foreach (var issue in allIssues)
+            {
+                if (alreadyLinkedIssueIds.Contains(issue.JiraIssueId))
+                {
+                    continue; // Skip silently
+                }
+
+                if (string.IsNullOrEmpty(issue.AssigneeJiraId))
+                {
+                    continue; // Skip if no assignee
+                }
+
+                if (!usersByJiraId.TryGetValue(issue.AssigneeJiraId, out var mappedUser))
+                {
+                    result.Skipped++;
+                    continue; // User is not mapped
+                }
+
+                if (!await _memberRepository.IsMemberOfGroupAsync(groupId, mappedUser.UserId))
+                {
+                    result.Skipped++;
+                    continue; // User is mapped but not in this group
+                }
+
+                try
+                {
+                    var linkedRequirement = await _requirementRepository.GetByJiraIssueIdAsync(issue.JiraIssueId);
+                    
+                    PriorityLevel priority = PriorityLevel.medium;
+                    if (issue.Priority.HasValue)
+                    {
+                        priority = issue.Priority switch
+                        {
+                            JiraPriority.highest => PriorityLevel.high,
+                            JiraPriority.high => PriorityLevel.high,
+                            JiraPriority.medium => PriorityLevel.medium,
+                            JiraPriority.low => PriorityLevel.low,
+                            JiraPriority.lowest => PriorityLevel.low,
+                            _ => PriorityLevel.medium
+                        };
+                    }
+
+                    var newStatus = issue.Status?.ToLower() switch
+                    {
+                        "to do" or "todo" or "to_do" => DAL.Models.TaskStatus.todo,
+                        "in progress" or "in_progress" => DAL.Models.TaskStatus.in_progress,
+                        "done" or "completed" => DAL.Models.TaskStatus.done,
+                        _ => DAL.Models.TaskStatus.todo
+                    };
+
+                    var task = new DAL.Models.Task
+                    {
+                        Title = issue.Summary,
+                        Description = issue.Description,
+                        RequirementId = linkedRequirement?.RequirementId,
+                        JiraIssueId = issue.JiraIssueId,
+                        AssignedTo = mappedUser.UserId,
+                        Status = newStatus,
+                        Priority = priority,
+                        CompletedAt = newStatus == DAL.Models.TaskStatus.done ? DateTime.UtcNow : null
+                    };
+
+                    await _taskRepository.AddAsync(task);
+                    usersToRecalculateStats.Add(mappedUser.UserId);
+                    result.Imported++;
+                }
+                catch (Exception ex)
+                {
+                    result.Failed++;
+                    result.Errors.Add($"Failed to import '{issue.IssueKey}': {ex.Message}");
+                }
+            }
+
+            foreach (var uId in usersToRecalculateStats)
+            {
+                await _personalTaskStatisticRepository.RecalculateForUserProjectAsync(uId, project.ProjectId);
+            }
+
+            return result;
+        }
+
+        private (string Url, string Email, string Token) GetJiraCredentials(DAL.Models.JiraIntegration integration)
+        {
+            string url = integration.ActiveUrl;
+            string token = !string.IsNullOrEmpty(integration.AccessToken)
+                ? _tokenEncryption.Decrypt(integration.AccessToken)
+                : _tokenEncryption.Decrypt(integration.ApiToken);
+            string email = !string.IsNullOrEmpty(integration.AccessToken)
+                ? "oauth@placeholder.com"
+                : integration.JiraEmail;
+            return (url, email, token);
+        }
     }
 }

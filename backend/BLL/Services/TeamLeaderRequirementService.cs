@@ -38,7 +38,7 @@ namespace BLL.Services
         private readonly IJiraIntegrationRepository _jiraIntegrationRepository;
         private readonly IJiraApiService _jiraApiService;
         private readonly IPersonalTaskStatisticRepository _personalTaskStatisticRepository;
-        private readonly byte[] _encryptionKey;
+        private readonly ITokenEncryptionService _tokenEncryption;
         private readonly ISrsDocumentRepository _srsDocumentRepository;
         private readonly IAiChatService _aiChatService;
 
@@ -58,7 +58,8 @@ namespace BLL.Services
             IPersonalTaskStatisticRepository personalTaskStatisticRepository,
             IConfiguration configuration,
             ISrsDocumentRepository srsDocumentRepository,
-            IAiChatService aiChatService)
+            IAiChatService aiChatService,
+            ITokenEncryptionService tokenEncryption)
         {
             _leaderValidationService = leaderValidationService;
             _memberRepository = memberRepository;
@@ -75,9 +76,7 @@ namespace BLL.Services
             _personalTaskStatisticRepository = personalTaskStatisticRepository;
             _srsDocumentRepository = srsDocumentRepository;
             _aiChatService = aiChatService;
-            // Derive the same stable AES-GCM key as JiraIntegrationService
-            var jwtKey = configuration["Jwt:Key"] ?? "JGMS_DEFAULT_ENCRYPTION_KEY_32CH";
-            _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(jwtKey));
+            _tokenEncryption = tokenEncryption;
         }
 
         /// <summary>
@@ -154,7 +153,7 @@ namespace BLL.Services
                 if (integration != null)
                 {
                     var createdJiraIssue = await _jiraApiService.CreateIssueAsync(
-                        integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                        GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                         new CreateJiraIssueDTO
                         {
                             ProjectKey = integration.ProjectKey,
@@ -256,8 +255,10 @@ namespace BLL.Services
                     {
                         try
                         {
+                            
+
                             await _jiraApiService.UpdateIssueAsync(
-                                integration.JiraUrl, integration.JiraEmail, TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey),
+                                GetJiraCredentials(integration).Url, GetJiraCredentials(integration).Email, GetJiraCredentials(integration).Token,
                                 jiraIssue.IssueKey,
                                 new UpdateJiraIssueDTO
                                 {
@@ -331,11 +332,11 @@ namespace BLL.Services
                         {
                             var client = new System.Net.Http.HttpClient();
                             var authValue = Convert.ToBase64String(
-                                System.Text.Encoding.UTF8.GetBytes($"{integration.JiraEmail}:{TeamLeaderHelper.DecryptToken(integration.ApiToken, _encryptionKey)}"));
+                                System.Text.Encoding.UTF8.GetBytes($"{GetJiraCredentials(integration).Email}:{GetJiraCredentials(integration).Token}"));
                             client.DefaultRequestHeaders.Authorization =
                                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
                             await client.DeleteAsync(
-                                $"{integration.JiraUrl.TrimEnd('/')}/rest/api/3/issue/{jiraIssue.IssueKey}");
+                                $"{GetJiraCredentials(integration).Url.TrimEnd('/')}/rest/api/3/issue/{jiraIssue.IssueKey}");
                         }
                         catch
                         {
@@ -509,5 +510,16 @@ namespace BLL.Services
                 _ => DAL.Models.RequirementType.functional
             };
 
+        private (string Url, string Email, string Token) GetJiraCredentials(DAL.Models.JiraIntegration integration)
+        {
+            string url = integration.ActiveUrl;
+            string token = !string.IsNullOrEmpty(integration.AccessToken)
+                ? _tokenEncryption.Decrypt(integration.AccessToken)
+                : _tokenEncryption.Decrypt(integration.ApiToken);
+            string email = !string.IsNullOrEmpty(integration.AccessToken)
+                ? "oauth@placeholder.com"
+                : integration.JiraEmail;
+            return (url, email, token);
+        }
     }
 }
