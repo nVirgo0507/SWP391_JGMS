@@ -81,7 +81,7 @@ namespace BLL.Services
             var result = await response.Content.ReadFromJsonAsync<JsonElement>();
             return (
                 result.GetProperty("access_token").GetString()!,
-                result.GetProperty("refresh_token").GetString()!,
+                result.TryGetProperty("refresh_token", out var rt) ? rt.GetString()! : refreshToken,
                 result.GetProperty("expires_in").GetInt32()
             );
         }
@@ -94,7 +94,8 @@ namespace BLL.Services
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception("Failed to get Atlassian user profile");
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to get Atlassian user profile: {response.StatusCode} - {error}");
             }
 
             var result = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -109,7 +110,8 @@ namespace BLL.Services
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception("Failed to get Atlassian user profile");
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to get Atlassian user profile: {response.StatusCode} - {error}");
             }
 
             var result = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -130,7 +132,8 @@ namespace BLL.Services
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception("Failed to get Atlassian accessible resources");
+                var error = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to get Atlassian accessible resources: {response.StatusCode} - {error}");
             }
 
             var resources = await response.Content.ReadFromJsonAsync<JsonElement>();

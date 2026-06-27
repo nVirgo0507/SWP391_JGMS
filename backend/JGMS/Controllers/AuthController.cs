@@ -92,7 +92,7 @@ namespace SWP391_JGMS.Controllers
 			{
 				var tokens = await _atlassianAuthService.ExchangeCodeForTokensAsync(request.Code);
                 var profile = await _atlassianAuthService.GetAtlassianProfileAsync(tokens.AccessToken);
-                var result = await _userService.HandleJiraSsoAsync(profile);
+                var result = await _userService.HandleJiraSsoAsync(profile, tokens.AccessToken, tokens.RefreshToken, tokens.ExpiresIn);
 
 				return Ok(result);
 			}
