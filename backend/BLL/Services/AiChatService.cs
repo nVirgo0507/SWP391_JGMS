@@ -24,6 +24,19 @@ namespace BLL.Services
             // Get base URL (e.g. http://localhost:8080/)
             var baseUrl = config["AiAgentSettings:BaseUrl"] ?? "http://localhost:8080/";
             _httpClient.BaseAddress = new Uri(baseUrl);
+            
+            // Add header to bypass ngrok's browser warning page for API requests
+            _httpClient.DefaultRequestHeaders.Add("ngrok-skip-browser-warning", "true");
+
+            // Setup Basic Authentication if credentials are provided in configuration
+            var username = config["AiAgentSettings:Username"];
+            var password = config["AiAgentSettings:Password"];
+            
+            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+            {
+                var byteArray = System.Text.Encoding.ASCII.GetBytes($"{username}:{password}");
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+            }
         }
 
         public async Task<IEnumerable<ChatMessage>> GetChatHistoryAsync(int userId)

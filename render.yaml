@@ -12,6 +12,12 @@ services:
     envVars:
       - key: PORT
         value: 10000
+      - key: AiAgentSettings__BaseUrl
+        sync: false  # Update this manually in the Render dashboard with your current ngrok URL
+      - key: AiAgentSettings__Username
+        sync: false  # Update this manually in the Render dashboard with your basic auth username (e.g. user01)
+      - key: AiAgentSettings__Password
+        sync: false  # Update this manually in the Render dashboard with your basic auth password
       - key: ConnectionStrings__DefaultConnection
         sync: false  # set manually in Render dashboard
       - key: Jwt__Key
