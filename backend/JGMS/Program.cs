@@ -145,21 +145,33 @@ public class Program
 		// Configure Npgsql to handle DateTime correctly
 		AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
+		var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("DefaultConnection"));
+		dataSourceBuilder.MapEnum<UserRole>("user_role");
+		dataSourceBuilder.MapEnum<UserStatus>("user_status");
+		dataSourceBuilder.MapEnum<DAL.Models.TaskStatus>("task_status");
+		dataSourceBuilder.MapEnum<PriorityLevel>("priority_level");
+		dataSourceBuilder.MapEnum<RequirementType>("requirement_type");
+		dataSourceBuilder.MapEnum<JiraPriority>("jira_priority");
+		dataSourceBuilder.MapEnum<DocumentStatus>("document_status");
+		dataSourceBuilder.MapEnum<ProjectStatus>("project_status");
+		dataSourceBuilder.MapEnum<SyncStatus>("sync_status");
+		dataSourceBuilder.MapEnum<ReportType>("report_type");
+		var dataSource = dataSourceBuilder.Build();
+
 		builder.Services.AddDbContext<JgmsContext>(options =>
-	        options.UseNpgsql(
-		    builder.Configuration.GetConnectionString("DefaultConnection"),
-		    npgsqlOptions => npgsqlOptions
-		        .MapEnum<UserRole>("user_role")
-		        .MapEnum<UserStatus>("user_status")
-		        .MapEnum<DAL.Models.TaskStatus>("task_status")
-		        .MapEnum<PriorityLevel>("priority_level")
-		        .MapEnum<RequirementType>("requirement_type")
-		        .MapEnum<JiraPriority>("jira_priority")
-		        .MapEnum<DocumentStatus>("document_status")
-		        .MapEnum<ProjectStatus>("project_status")
-		        .MapEnum<SyncStatus>("sync_status")
-		        .MapEnum<ReportType>("report_type")
-	    ));
+			options.UseNpgsql(dataSource, npgsqlOptions => npgsqlOptions
+				.MapEnum<UserRole>("user_role")
+				.MapEnum<UserStatus>("user_status")
+				.MapEnum<DAL.Models.TaskStatus>("task_status")
+				.MapEnum<PriorityLevel>("priority_level")
+				.MapEnum<RequirementType>("requirement_type")
+				.MapEnum<JiraPriority>("jira_priority")
+				.MapEnum<DocumentStatus>("document_status")
+				.MapEnum<ProjectStatus>("project_status")
+				.MapEnum<SyncStatus>("sync_status")
+				.MapEnum<ReportType>("report_type")
+			)
+		);
 
 		// Register repositories
 		builder.Services.AddScoped<IUserRepository, UserRepository>();
