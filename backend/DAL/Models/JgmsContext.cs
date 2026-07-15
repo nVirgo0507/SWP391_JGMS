@@ -58,16 +58,16 @@ public partial class JgmsContext : DbContext
     {
 
 		modelBuilder
-			.HasPostgresEnum("document_status", new[] { "draft", "published" })
-            .HasPostgresEnum("jira_priority", new[] { "highest", "high", "medium", "low", "lowest" })
-            .HasPostgresEnum("priority_level", new[] { "high", "medium", "low" })
-            .HasPostgresEnum("project_status", new[] { "active", "completed" })
-            .HasPostgresEnum("report_type", new[] { "task_assignment", "task_completion", "weekly", "sprint" })
-            .HasPostgresEnum("requirement_type", new[] { "functional", "non-functional" })
-            .HasPostgresEnum("sync_status", new[] { "pending", "syncing", "success", "failed" })
-            .HasPostgresEnum("task_status", new[] { "todo", "in_progress", "done" })
-            .HasPostgresEnum("user_role", new[] { "admin", "lecturer", "student" })
-            .HasPostgresEnum("user_status", new[] { "active", "inactive" });
+			.HasPostgresEnum<DocumentStatus>("document_status")
+			.HasPostgresEnum<JiraPriority>("jira_priority")
+			.HasPostgresEnum<PriorityLevel>("priority_level")
+			.HasPostgresEnum<ProjectStatus>("project_status")
+			.HasPostgresEnum<ReportType>("report_type")
+			.HasPostgresEnum<RequirementType>("requirement_type")
+			.HasPostgresEnum<SyncStatus>("sync_status")
+			.HasPostgresEnum<DAL.Models.TaskStatus>("task_status")
+			.HasPostgresEnum<UserRole>("user_role")
+			.HasPostgresEnum<UserStatus>("user_status");
 
         modelBuilder.Entity<Commit>(entity =>
         {

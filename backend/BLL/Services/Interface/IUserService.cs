@@ -44,5 +44,10 @@ namespace BLL.Services.Interface
 		/// Returns user object if credentials are valid, null otherwise
 		/// </summary>
 		Task<string?> LoginAsync(LoginDTO dto);
+
+		/// <summary>
+		/// Changes the user's password after verifying the current password
+		/// </summary>
+		System.Threading.Tasks.Task ChangePasswordAsync(int userId, ChangePasswordDTO dto);
 	}
 }

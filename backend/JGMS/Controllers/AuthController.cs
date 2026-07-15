@@ -1,7 +1,8 @@
-﻿using BLL.DTOs;
+using BLL.DTOs;
 using BLL.Services.Interface;
 using Microsoft.AspNetCore.Mvc;
-
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 namespace SWP391_JGMS.Controllers
 {
 	[ApiController]
@@ -34,7 +35,7 @@ namespace SWP391_JGMS.Controllers
 			}
 			catch (Exception ex)
 			{
-				return BadRequest(new { message = ex.Message });
+				return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
 			}
 		}
 
@@ -55,7 +56,7 @@ namespace SWP391_JGMS.Controllers
 			}
 			catch (Exception ex)
 			{
-				return BadRequest(new { message = ex.Message });
+				return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
 			}
 		}
 
@@ -76,7 +77,7 @@ namespace SWP391_JGMS.Controllers
 			}
 			catch (Exception ex)
 			{
-				return BadRequest(new { message = ex.Message });
+				return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
 			}
 		}
 
@@ -98,7 +99,7 @@ namespace SWP391_JGMS.Controllers
 			}
 			catch (Exception ex)
 			{
-				return BadRequest(new { message = ex.Message });
+				return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
 			}
 		}
 
@@ -115,7 +116,32 @@ namespace SWP391_JGMS.Controllers
 			}
 			catch (Exception ex)
 			{
-				return BadRequest(new { message = ex.Message });
+				return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
+			}
+		}
+
+		/// <summary>
+		/// Change user password. Requires authentication.
+		/// </summary>
+		[HttpPut("change-password")]
+		[Authorize]
+		public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDTO dto)
+		{
+			try
+			{
+				if (!ModelState.IsValid)
+					return BadRequest(ModelState);
+
+				var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+				if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+					return Unauthorized(new { message = "Invalid token claims" });
+
+				await _userService.ChangePasswordAsync(userId, dto);
+				return Ok(new { message = "Password changed successfully" });
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
 			}
 		}
 	}

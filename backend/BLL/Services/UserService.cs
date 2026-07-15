@@ -1,4 +1,4 @@
-﻿using BLL.DTOs;
+using BLL.DTOs;
 using BLL.Helpers;
 using BLL.Services.Interface;
 using DAL.Models;
@@ -224,6 +224,27 @@ namespace BLL.Services
 				DatabaseExceptionHandler.HandleUniqueConstraintViolation(ex);
 				throw;
 			}
+		}
+
+		public async System.Threading.Tasks.Task ChangePasswordAsync(int userId, ChangePasswordDTO dto)
+		{
+			var user = await _userRepository.GetByIdAsync(userId);
+			if (user == null)
+				throw new Exception("User not found");
+
+			// Verify current password
+			var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, dto.CurrentPassword);
+			if (result != PasswordVerificationResult.Success)
+				throw new Exception("Incorrect current password");
+
+			// Validate new password format
+			var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$");
+			if (!regex.IsMatch(dto.NewPassword))
+				throw new Exception("New password must be at least 8 characters with uppercase, lowercase, and number");
+
+			// Update password
+			user.PasswordHash = _passwordHasher.HashPassword(user, dto.NewPassword);
+			await _userRepository.UpdateAsync(user);
 		}
 	}
 }
